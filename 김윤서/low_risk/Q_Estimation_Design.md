@@ -1,7 +1,7 @@
 # Q / Ω 방식 설계 검토
 
 > 작성일: 2026-04-30  
-> 대상 노트북: 08_BL_Q_Methods, 10_Q_Adaptive_Comparison  
+> 대상 노트북: 07_BL_Q_Methods (비-레짐 7종), 08_Regime_Q_Portfolio (Regime3, Regime+λ)  
 > 목적: BL 뷰 파라미터 Q(점추정값)와 Ω(불확실성)의 역할을 구분하고, 각각에 적합한 설계 방식 정리
 
 ---
