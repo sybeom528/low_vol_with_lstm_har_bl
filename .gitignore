@@ -16,6 +16,7 @@ wheels/
 *.pkl
 *.csv
 *.parquet
+*.bak
 
 
 # Jupyter Notebook

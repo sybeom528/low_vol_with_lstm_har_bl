@@ -282,19 +282,37 @@ def run_walkforward_for_ticker(
     config: dict = V4_BEST_CONFIG,
     device: str = "auto",
     verbose: bool = False,
+    existing_folds: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """종목 1개의 walk-forward 전체 실행.
+
+    Parameters
+    ----------
+    existing_folds : pd.DataFrame, optional (2026-05-01 추가)
+        해당 ticker 의 기존 fold predictions (date, ticker, fold, y_true, y_pred_lstm, y_pred_har).
+        - None (default): 전체 fold 처음부터 학습 (기존 동작).
+        - DataFrame 제공: incremental 모드 — 마지막 fold (panel 확장으로 y_true 채워짐) +
+          신규 fold 만 학습. 시간 95% 단축 (215 → ~5 fold).
 
     Returns
     -------
     pd.DataFrame
         long format: (date, ticker, fold, y_true, y_pred_lstm, y_pred_har)
+        incremental 모드 시 기존 fold (start_k 미만) + 신규 fold merge 결과.
     """
     inputs = build_v4_inputs(panel_ticker, config["har_w"], config["har_m"])
     n = len(inputs["series"])
 
+    # ⭐ 2026-05-01 추가: Forward y_true buffer
+    # LSTM 의 y_true = 다음 oos_len(21) 영업일 변동성 → panel 끝점 부근에서 forward 데이터 부재
+    # → train set 안에 y_true NaN 행 다수 포함 → loss NaN → model weights NaN → OOS 예측 NaN
+    # 해결: fold 생성 시 n - oos_len 까지만 사용 → 모든 fold 의 y_true finite 보장
+    oos_len_buffer = config.get("oos_len", 21)
+    min_required = config["is_len"] + config["seq_len"] + config["oos_len"]
+    n_safe = max(n - oos_len_buffer, min_required)
+
     folds = walk_forward_folds(
-        n=n,
+        n=n_safe,
         is_len=config["is_len"],
         purge=config["window"],
         emb=config["embargo"],
@@ -306,8 +324,22 @@ def run_walkforward_for_ticker(
     log_ret = inputs["log_ret"]
     dates = inputs["date"]
 
+    # ⭐ Incremental 모드: 기존 fold 의 max fold 부터 재학습 (마지막 + 신규)
+    if existing_folds is not None and len(existing_folds) > 0:
+        start_k = int(existing_folds["fold"].max())
+        if verbose:
+            print(
+                f"    [{ticker}] incremental: fold {start_k} 부터 학습 "
+                f"(기존 {start_k} fold 보존, 마지막 1 + 신규 N fold)"
+            )
+    else:
+        start_k = 0
+
     rows = []
     for k, (train_idx, test_idx) in enumerate(folds):
+        if k < start_k:
+            continue   # ⭐ 기존 fold 보존 (재학습 skip)
+
         # LSTM v4
         y_pred_lstm, info = run_lstm_v4_fold(
             inputs, train_idx, test_idx, config, device, verbose=False
@@ -339,7 +371,18 @@ def run_walkforward_for_ticker(
         if verbose and (k + 1) % 10 == 0:
             print(f"    [{ticker}] fold {k+1}/{len(folds)} 완료")
 
-    return pd.DataFrame(rows)
+    # ⭐ 빈 DataFrame 도 column 명시 (downstream KeyError 방지)
+    EXPECTED_COLS = ["date", "ticker", "fold", "y_true", "y_pred_lstm", "y_pred_har"]
+    new_df = pd.DataFrame(rows, columns=EXPECTED_COLS) if rows else pd.DataFrame(columns=EXPECTED_COLS)
+
+    # ⭐ Incremental: 기존 fold (start_k 미만) + 신규 fold merge
+    if existing_folds is not None and len(existing_folds) > 0:
+        kept = existing_folds[existing_folds["fold"] < start_k].copy()
+        if "date" in kept.columns and not pd.api.types.is_datetime64_any_dtype(kept["date"]):
+            kept["date"] = pd.to_datetime(kept["date"])
+        return pd.concat([kept, new_df], ignore_index=True)
+
+    return new_df
 
 
 # =============================================================================
@@ -566,14 +609,24 @@ def _train_ticker_worker(args: tuple) -> tuple:
     Parameters
     ----------
     args : tuple
-        (ticker, panel_t, config, device, gpu_id) 의 5-tuple.
+        - 5-tuple (기존, backward 호환): (ticker, panel_t, config, device, gpu_id)
+        - 6-tuple (2026-05-01 추가, incremental 모드): (ticker, panel_t, config, device, gpu_id, existing_folds_t)
+            existing_folds_t = 그 ticker 의 기존 fold predictions DataFrame (마지막 fold 부터 재학습 트리거).
 
     Returns
     -------
     tuple
         (ticker, fold_results_df, error_msg) — error_msg None 시 성공.
     """
-    ticker, panel_t, config, device, gpu_id = args
+    # ⭐ 6-tuple (incremental) backward-compatible 처리
+    if len(args) == 5:
+        ticker, panel_t, config, device, gpu_id = args
+        existing_folds_t = None
+    elif len(args) == 6:
+        ticker, panel_t, config, device, gpu_id, existing_folds_t = args
+    else:
+        return (None, None, f"Invalid args tuple length: {len(args)}")
+
     try:
         # ⭐ GPU device 명시적 설정 (multiprocessing 안전)
         if device == "cuda" or (isinstance(device, str) and device.startswith("cuda")):
@@ -595,6 +648,7 @@ def _train_ticker_worker(args: tuple) -> tuple:
             config=config,
             device=effective_device,
             verbose=False,
+            existing_folds=existing_folds_t,  # ⭐ incremental 전달 (None 시 기존 동작)
         )
         return (ticker, df_t, None)
     except Exception as e:
@@ -613,6 +667,7 @@ def run_ensemble_for_universe_parallel(
     out_name: str = "ensemble_predictions_stockwise.csv",
     overwrite: bool = False,
     verbose: bool = True,
+    incremental: bool = False,
 ) -> pd.DataFrame:
     """Phase 3 — 종목별 walk-forward 8-way 병렬 학습.
 
@@ -660,12 +715,41 @@ def run_ensemble_for_universe_parallel(
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ⭐ 캐시 확인 (2026-04-30 추가): 출력 파일 이미 있으면 학습 skip
     out_path = out_dir / out_name
-    if out_path.exists() and not overwrite:
+    fold_path = out_dir / "fold_predictions_stockwise.csv"
+
+    # ⭐ Incremental 모드 (2026-05-01 추가): 기존 fold predictions 로드 → 마지막 + 신규 fold 만 학습
+    existing_fold_all = None
+    if incremental:
+        if not fold_path.exists():
+            if verbose:
+                print(
+                    f"  [parallel] ⚠️ incremental=True but {fold_path.name} 부재 → 전체 학습으로 fallback",
+                    flush=True,
+                )
+            incremental = False
+        else:
+            existing_fold_all = pd.read_csv(fold_path, parse_dates=["date"])
+            if verbose:
+                n_existing_tickers = existing_fold_all["ticker"].nunique()
+                max_fold = int(existing_fold_all["fold"].max())
+                print(
+                    f"  [parallel] ⚡ Incremental 모드: {fold_path.name} 로드 "
+                    f"({len(existing_fold_all):,} rows, {n_existing_tickers} 종목, "
+                    f"{max_fold + 1} fold)",
+                    flush=True,
+                )
+                print(
+                    f"  [parallel] 마지막 fold ({max_fold}) + 신규 fold (panel 확장 후) 만 학습",
+                    flush=True,
+                )
+
+    # ⭐ 캐시 확인 (incremental=False 일 때만)
+    if not incremental and out_path.exists() and not overwrite:
         if verbose:
             print(f"  [parallel] 캐시 사용: {out_path.name} (재학습 생략)", flush=True)
             print(f"  [parallel] 강제 재학습: overwrite=True 인자로 호출", flush=True)
+            print(f"  [parallel] Incremental 학습: incremental=True 인자로 호출", flush=True)
         cached = pd.read_csv(out_path, parse_dates=["date"])
         if verbose:
             print(
@@ -690,6 +774,7 @@ def run_ensemble_for_universe_parallel(
             print(f"  [parallel] 전체 모드: {len(tickers)} 종목")
 
     # 종목별 args 준비 (gpu_id 추가 — 단일 GPU 환경에서 모두 0)
+    # ⭐ Incremental 모드 시: 6-tuple (existing_folds_t 포함) 으로 전달
     args_list = []
     for i, ticker in enumerate(tickers):
         panel_t = panel[panel["ticker"] == ticker].copy()
@@ -697,8 +782,15 @@ def run_ensemble_for_universe_parallel(
             if verbose:
                 print(f"    [{ticker}] 데이터 부족 ({len(panel_t)}) → skip")
             continue
-        # ⭐ gpu_id 0 (단일 GPU 환경). multi-GPU 환경 시 i % n_gpus 등으로 분배
-        args_list.append((ticker, panel_t, config, device, 0))
+
+        # ⭐ Incremental: 그 ticker 의 기존 fold predictions split (없으면 빈 DataFrame)
+        if incremental and existing_fold_all is not None:
+            existing_folds_t = existing_fold_all[existing_fold_all["ticker"] == ticker].copy()
+            # 6-tuple (incremental 모드)
+            args_list.append((ticker, panel_t, config, device, 0, existing_folds_t))
+        else:
+            # 5-tuple (기존 동작)
+            args_list.append((ticker, panel_t, config, device, 0))
 
     if verbose:
         print(
@@ -769,7 +861,11 @@ def run_ensemble_for_universe_parallel(
                     )
             else:
                 fold_results_all.append(df_t)
-                n_folds = df_t["fold"].nunique() if df_t is not None else 0
+                # ⭐ 빈 DataFrame (fold column 부재) 안전 처리
+                if df_t is None or len(df_t) == 0 or "fold" not in df_t.columns:
+                    n_folds = 0
+                else:
+                    n_folds = df_t["fold"].nunique()
                 if verbose:
                     # CMD 에서도 잘 보이도록 한 줄 출력 + flush
                     print(
@@ -1121,6 +1217,7 @@ def run_ensemble_cross_sectional(
     use_har: bool = True,
     overwrite: bool = False,
     verbose: bool = True,
+    incremental: bool = False,
 ) -> pd.DataFrame:
     """Phase 3 — Cross-Sectional LSTM walk-forward 학습 + HAR ensemble.
 
@@ -1166,12 +1263,39 @@ def run_ensemble_cross_sectional(
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ⭐ 캐시 확인 (2026-04-30 추가): 출력 파일 이미 있으면 학습 skip
     out_path = out_dir / out_name
-    if out_path.exists() and not overwrite:
+
+    # ⭐ Incremental 모드 (2026-05-01 추가): 기존 ensemble 로드 → 마지막 + 신규 fold 만 학습
+    existing_ensemble = None
+    start_fold = 0
+    if incremental:
+        if not out_path.exists():
+            if verbose:
+                print(
+                    f"  [cross-sec] ⚠️ incremental=True but {out_name} 부재 → 전체 학습으로 fallback",
+                    flush=True,
+                )
+            incremental = False
+        else:
+            existing_ensemble = pd.read_csv(out_path, parse_dates=["date"])
+            start_fold = int(existing_ensemble["fold"].max())
+            if verbose:
+                print(
+                    f"  [cross-sec] ⚡ Incremental 모드: {out_name} 로드 "
+                    f"({len(existing_ensemble):,} rows, fold {start_fold + 1}개)",
+                    flush=True,
+                )
+                print(
+                    f"  [cross-sec] 마지막 fold ({start_fold}) + 신규 fold (panel 확장 후) 만 학습",
+                    flush=True,
+                )
+
+    # ⭐ 캐시 확인 (incremental=False 일 때만)
+    if not incremental and out_path.exists() and not overwrite:
         if verbose:
             print(f"  [cross-sec] 캐시 사용: {out_path.name} (재학습 생략)", flush=True)
             print(f"  [cross-sec] 강제 재학습: overwrite=True 인자로 호출", flush=True)
+            print(f"  [cross-sec] Incremental 학습: incremental=True 인자로 호출", flush=True)
         cached = pd.read_csv(out_path, parse_dates=["date"])
         if verbose:
             print(
@@ -1255,9 +1379,24 @@ def run_ensemble_cross_sectional(
         )
         print(f"  [cross-sec] common_length (fold 기준) = {common_length}", flush=True)
 
+    # ⭐ 2026-05-01 추가: Forward y_true buffer (02a 와 동일 패턴)
+    # LSTM 의 y_true = 다음 oos_len(21) 영업일 변동성 → panel 끝점 부근 forward 데이터 부재
+    # → train set 안에 y_true NaN 행 다수 → loss NaN → model NaN → OOS 예측 NaN
+    # 해결: fold 생성 시 common_length - oos_len 까지만 사용
+    oos_len_buffer = config.get("oos_len", 21)
+    min_required = config["is_len"] + config["seq_len"] + config["oos_len"]
+    common_length_safe = max(common_length - oos_len_buffer, min_required)
+
+    if verbose and common_length_safe < common_length:
+        print(
+            f"  [cross-sec] forward buffer 적용: common_length {common_length} → {common_length_safe} "
+            f"(끝점 oos_len={oos_len_buffer}일 제외)",
+            flush=True,
+        )
+
     # walk_forward_folds 호출 (Phase 1.5 의 dataset.py)
     folds = walk_forward_folds(
-        n=common_length,
+        n=common_length_safe,
         is_len=config["is_len"],
         purge=config["window"],
         emb=config["embargo"],
@@ -1333,6 +1472,10 @@ def run_ensemble_cross_sectional(
         fold_iter = enumerate(folds)
 
     for k, (train_idx_common, test_idx_common) in fold_iter:
+        # ⭐ Incremental 모드: 기존 fold (start_fold 미만) skip
+        if incremental and k < start_fold:
+            continue
+
         # ⭐ Seed 고정 (재현성)
         torch.manual_seed(42 + k)
         np.random.seed(42 + k)
@@ -1565,6 +1708,9 @@ def run_ensemble_cross_sectional(
             log_ret = pd.Series(panel_t["log_ret"].values, index=panel_t["date"].values)
 
             for k, (train_idx_common, test_idx_common) in enumerate(folds):
+                # ⭐ Incremental 모드: 기존 fold (start_fold 미만) skip
+                if incremental and k < start_fold:
+                    continue
                 try:
                     y_pred_har, _ = fit_har_rv(
                         log_ret=log_ret,
@@ -1642,6 +1788,19 @@ def run_ensemble_cross_sectional(
         ensemble_df["w_lstm_cs"] = 1.0
         ensemble_df["w_har"] = 0.0
         ensemble_df["y_pred_ensemble"] = ensemble_df["y_pred_lstm_cs"]
+
+    # ⭐ Incremental 모드 (2026-05-01): 기존 ensemble (start_fold 미만 fold) + 신규 fold merge
+    if incremental and existing_ensemble is not None:
+        kept = existing_ensemble[existing_ensemble["fold"] < start_fold].copy()
+        if "date" in kept.columns and not pd.api.types.is_datetime64_any_dtype(kept["date"]):
+            kept["date"] = pd.to_datetime(kept["date"])
+        if verbose:
+            print(
+                f"  [cross-sec] Incremental merge: 기존 fold {start_fold}개 ({len(kept):,} rows) "
+                f"+ 신규 fold ({len(ensemble_df):,} rows)",
+                flush=True,
+            )
+        ensemble_df = pd.concat([kept, ensemble_df], ignore_index=True)
 
     # 저장
     ensemble_df.to_csv(out_dir / out_name, index=False)
