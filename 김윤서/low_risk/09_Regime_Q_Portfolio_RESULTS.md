@@ -1,6 +1,6 @@
-# 08. 레짐별 Q 조정 포트폴리오 (Regime-Adaptive BL) — 실행 결과 해석
+# 09. 레짐별 Q 조정 포트폴리오 (Regime-Adaptive BL) — 실행 결과 해석
 
-> 실행 조건: 2011-01-31 ~ 2025-12-31 (180개월), Q_OPTIMAL=0.003 (05_Q_Sensitivity 자동 로드)  
+> 실행 조건: 2011-01-31 ~ 2025-12-31 (180개월), Q_OPTIMAL=0.003 (06_Q_Sensitivity 자동 로드)  
 > 전략: Regime-Q (레짐별 Q 동적 조정) vs Fixed-Q (Q=0.003 고정) vs CAPM vs SPY  
 > 레짐 정의: SPY 12개월 롤링 변동성 expanding 분위수 (33·67 퍼센타일)
 

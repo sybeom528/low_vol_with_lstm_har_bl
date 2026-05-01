@@ -558,7 +558,7 @@ def build_P(vol_series, weight_series, pct=0.10):
 
 ---
 
-## Q 산정 방식 비교 (07_BL_Q_Comparison 결과)
+## Q 산정 방식 비교 (옛 07_BL_Q_Comparison 결과 — 현재 08_BL_Q_Methods로 통합)
 
 ### Q가 하는 일
 
