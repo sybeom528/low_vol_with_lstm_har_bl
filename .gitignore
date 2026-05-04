@@ -37,6 +37,7 @@ __pycache__/
 CLAUDE.md
 context_packet.json
 log.md
+.claude/worktrees/
 
 # API 보안
 *.env
