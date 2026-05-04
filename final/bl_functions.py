@@ -274,6 +274,39 @@ def compute_Q_spread(
     return float(np.nanmean(spreads)) if spreads else 0.003
 
 
+def compute_Q_vol_spread(
+    P: pd.Series,
+    vol_pred: pd.Series,
+    q_base: float,
+    spread_ref: float,
+) -> float:
+    """예측 변동성 격차 기반 Q 동적 조절.
+
+    매 시점 t의 예측 vol 격차(고위험 그룹 평균 − 저위험 그룹 평균)를
+    역사적 중앙값(spread_ref)과 비교해 Q 강도 스케일링.
+
+    vol_spread_t = mean(vol_pred[P<0]) − mean(vol_pred[P>0])  (항상 양수)
+    Q = q_base × clip(vol_spread_t / spread_ref, 0.1, 3.0)
+
+    파이프라인 일관성: 같은 LSTM vol_pred가 P 분류와 Q 강도 결정에 모두 사용.
+    spread_ref는 walk-forward에서 train_dates 기간의 expanding median으로 계산
+    (look-ahead bias 없음).
+
+    주의: 위기 시 vol_spread가 확대되면 Q도 증가 → 위기 베팅 강화.
+    레짐 게이팅과 결합 시 안전성 보강 가능.
+    """
+    low_tix  = P[P > 0].index
+    high_tix = P[P < 0].index
+    vol_low  = vol_pred.reindex(low_tix).mean()
+    vol_high = vol_pred.reindex(high_tix).mean()
+    if pd.isna(vol_low) or pd.isna(vol_high):
+        return float(q_base)
+    spread = float(vol_high - vol_low)
+    if spread_ref <= 1e-8 or spread <= 0:
+        return float(q_base)
+    return float(q_base * np.clip(spread / spread_ref, 0.1, 3.0))
+
+
 def compute_Q_regime(
     spy_series_train: pd.Series,
     q_table: dict,

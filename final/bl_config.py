@@ -8,13 +8,13 @@ bl_config.py — Black-Litterman 실험 정의
 슬롯 키 정리:
   p_mode    : 'trailing_vol21' | 'lstm_predicted'
   p_weight  : 'mcap' | 'eq' | 'rp' | 'vol_mcap'
-  q_mode    : 'fixed' | 'ff3_regression' | 'realized_spread' | 'regime' | 'lambda' | 'raw_lam' | 'none'
+  q_mode    : 'fixed' | 'ff3_regression' | 'realized_spread' | 'regime' | 'lambda' | 'raw_lam' | 'vol_spread' | 'none'
   q_value   : float  (q_mode='fixed'|'lambda'|'raw_lam' 일 때 q_base로 사용, 기본 0.003)
   lam_mean  : float  (q_mode='lambda'|'raw_lam' 일 때 기준 λ, 기본 2.5)
   q_regime_table : dict (q_mode='regime' 일 때 사용)
   omega_mode: 'he_litterman' | 'scaled'
   omega_scale: float (omega_mode='scaled' 일 때 사용, 기본 1.0)
-  prior     : 'capm_mcap' | 'capm_eq'
+  prior     : 'capm_mcap' | 'capm_eq' | 'capm_rp'   # capm_rp = 1/σ 정규화 Risk Parity
   tc        : float  (거래비용, 편도 turnover 기준, 기본 0.001 = 10bp)
   max_weight: float  (단일 종목 상한, 기본 0.10)
   lstm_pred_path: str | None  (p_mode='lstm_predicted' 또는 omega_mode='rmse' 시 경로)
@@ -152,37 +152,202 @@ EXPERIMENTS = [
      'omega_mode': 'ff3_paper', 'p_mode': 'lstm_predicted'},
 
     # ════════════════════════════════════════════════════════════════════════
-    # [윤서 추가 실험] prior 1/N × p_weight vol_mcap × Q 동적 조합 7개
+    # [윤서 추가 실험] prior=1/N × Q 동적 (LSTM 전용 정책: trailing 버전은 제외)
     # ════════════════════════════════════════════════════════════════════════
-    # 목적: baseline 대비 prior·p·q 슬롯별 변경 효과를 OFAT + 조합으로 검증
+    # 아래 2개만 trailing 유지 (이미 .pkl 있음, 비교용)
+    # 5개 trailing은 LSTM 전용 정책에 따라 제거: p_vol_mcap_q_lambda,
+    # p_vol_mcap_q_raw_lam, prior_eq_p_vol_mcap, prior_eq_p_vol_mcap_q_lambda,
+    # prior_eq_p_vol_mcap_q_raw_lam (.pkl은 보존됨)
     # ════════════════════════════════════════════════════════════════════════
 
-    # ── prior=1/N × Q 동적 ────────────────────────────────────────────────
     {**BASELINE, 'name': 'prior_eq_q_lambda',
      'prior': 'capm_eq', 'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
 
     {**BASELINE, 'name': 'prior_eq_q_raw_lam',
      'prior': 'capm_eq', 'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
 
-    # ── p=vol_mcap × Q 동적 ───────────────────────────────────────────────
-    {**BASELINE, 'name': 'p_vol_mcap_q_lambda',
-     'p_weight': 'vol_mcap', 'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
+    # ════════════════════════════════════════════════════════════════════════
+    # [윤서 추가 LSTM 버전] 위 7개 실험에 LSTM 예측 vol 결합 (5개 신규)
+    # ════════════════════════════════════════════════════════════════════════
+    # 참고: 다음 2개는 팀이 이미 추가함
+    #   - prior_eq_q_lambda + LSTM      = prior_eq_q_lambda_p_lstm (기존)
+    #   - prior_eq_p_vol_mcap + LSTM    = prior_eq_p_lstm_vol_mcap (기존)
+    # ════════════════════════════════════════════════════════════════════════
 
-    {**BASELINE, 'name': 'p_vol_mcap_q_raw_lam',
-     'p_weight': 'vol_mcap', 'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
+    # ── prior=1/N × Q raw_lam × LSTM ──────────────────────────────────────
+    {**BASELINE, 'name': 'prior_eq_q_raw_lam_p_lstm',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
 
-    # ── prior=1/N × p=vol_mcap (Q fixed) ──────────────────────────────────
-    {**BASELINE, 'name': 'prior_eq_p_vol_mcap',
-     'prior': 'capm_eq', 'p_weight': 'vol_mcap'},
-
-    # ── 모두 변경: 1/N + vol_mcap + Q 동적 ────────────────────────────────
-    {**BASELINE, 'name': 'prior_eq_p_vol_mcap_q_lambda',
-     'prior': 'capm_eq', 'p_weight': 'vol_mcap',
+    # ── p=vol_mcap × Q 동적 × LSTM ────────────────────────────────────────
+    {**BASELINE, 'name': 'p_vol_mcap_q_lambda_p_lstm',
+     'p_mode': 'lstm_predicted', 'p_weight': 'vol_mcap',
      'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
 
-    {**BASELINE, 'name': 'prior_eq_p_vol_mcap_q_raw_lam',
-     'prior': 'capm_eq', 'p_weight': 'vol_mcap',
+    {**BASELINE, 'name': 'p_vol_mcap_q_raw_lam_p_lstm',
+     'p_mode': 'lstm_predicted', 'p_weight': 'vol_mcap',
      'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    # ── 모두 변경 + LSTM: 1/N + vol_mcap + Q 동적 + LSTM ──────────────────
+    {**BASELINE, 'name': 'prior_eq_p_vol_mcap_q_lambda_p_lstm',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'vol_mcap',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    {**BASELINE, 'name': 'prior_eq_p_vol_mcap_q_raw_lam_p_lstm',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'vol_mcap',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    # ════════════════════════════════════════════════════════════════════════
+    # [윤서 LSTM 4×4 매트릭스] prior=1/N + LSTM 고정, p_weight × q_mode 조합
+    # ════════════════════════════════════════════════════════════════════════
+    # p_weight ∈ {mcap, eq, rp, vol_mcap}
+    # q_mode ∈ {fixed, raw_lam, lambda, vol_spread}
+    # 16개 중 9개는 기존 실험으로 커버, 7개를 신규 추가
+    # ════════════════════════════════════════════════════════════════════════
+
+    # ── mcap × vol_spread ─────────────────────────────────────────────────
+    {**BASELINE, 'name': 'prior_eq_p_lstm_mcap_q_vol_spread',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'mcap',
+     'q_mode': 'vol_spread', 'q_value': 0.003},
+
+    # ── eq × {raw_lam, lambda, vol_spread} ────────────────────────────────
+    {**BASELINE, 'name': 'prior_eq_p_lstm_eq_q_raw_lam',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'eq',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    {**BASELINE, 'name': 'prior_eq_p_lstm_eq_q_lambda',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'eq',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    {**BASELINE, 'name': 'prior_eq_p_lstm_eq_q_vol_spread',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'eq',
+     'q_mode': 'vol_spread', 'q_value': 0.003},
+
+    # ── rp × {raw_lam, vol_spread} ────────────────────────────────────────
+    {**BASELINE, 'name': 'prior_eq_p_lstm_rp_q_raw_lam',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'rp',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    {**BASELINE, 'name': 'prior_eq_p_lstm_rp_q_vol_spread',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'rp',
+     'q_mode': 'vol_spread', 'q_value': 0.003},
+
+    # ── vol_mcap × vol_spread ─────────────────────────────────────────────
+    {**BASELINE, 'name': 'prior_eq_p_lstm_vol_mcap_q_vol_spread',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'vol_mcap',
+     'q_mode': 'vol_spread', 'q_value': 0.003},
+
+    # ════════════════════════════════════════════════════════════════════════
+    # [윤서 RP Prior] capm_rp (Risk Parity, 1/σ 정규화)
+    # ════════════════════════════════════════════════════════════════════════
+    # 04 Part 3 미니 BL: 1/N과 RP의 w* 상관 0.98 → 거의 동등 예상
+    # final 백테스트로 portfolio Sharpe 직접 검증
+    # ════════════════════════════════════════════════════════════════════════
+
+    # ── 기본 비교: prior_rp (baseline + RP만 변경) ─────────────────────
+    {**BASELINE, 'name': 'prior_rp',
+     'prior': 'capm_rp'},
+
+    # ── prior=RP × LSTM × P 가중치 4개 ───────────────────────────────
+    {**BASELINE, 'name': 'prior_rp_p_lstm_mcap',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_eq',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'eq'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_rp',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'rp'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_vol_mcap',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'vol_mcap'},
+
+    # ── prior=RP × LSTM × Q 동적 (lambda, raw_lam, vol_spread) ─────────
+    {**BASELINE, 'name': 'prior_rp_p_lstm_mcap_q_lambda',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_mcap_q_raw_lam',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_mcap_q_vol_spread',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted',
+     'q_mode': 'vol_spread', 'q_value': 0.003},
+
+    # ════════════════════════════════════════════════════════════════════════
+    # [윤서 Ω 슬롯 비교군] omega_paper(=ff3_paper)와 같은 레벨에 scaled/rmse 추가
+    # ════════════════════════════════════════════════════════════════════════
+    # 이미 존재: omega_paper (fixed Q + ff3_paper), omega_paper_p_lstm
+    # 신규: scaled(0.5/2.0), rmse — 각각 trailing/LSTM 두 버전
+    # ════════════════════════════════════════════════════════════════════════
+
+    {**BASELINE, 'name': 'omega_scaled_half',
+     'omega_mode': 'scaled', 'omega_scale': 0.5},
+
+    {**BASELINE, 'name': 'omega_scaled_half_p_lstm',
+     'omega_mode': 'scaled', 'omega_scale': 0.5, 'p_mode': 'lstm_predicted'},
+
+    {**BASELINE, 'name': 'omega_scaled_double',
+     'omega_mode': 'scaled', 'omega_scale': 2.0},
+
+    {**BASELINE, 'name': 'omega_scaled_double_p_lstm',
+     'omega_mode': 'scaled', 'omega_scale': 2.0, 'p_mode': 'lstm_predicted'},
+
+    {**BASELINE, 'name': 'omega_rmse',
+     'omega_mode': 'rmse'},
+
+    {**BASELINE, 'name': 'omega_rmse_p_lstm',
+     'omega_mode': 'rmse', 'p_mode': 'lstm_predicted'},
+
+    # ════════════════════════════════════════════════════════════════════════
+    # [윤서 Ω 비교 매트릭스] prior_eq + LSTM + p=mcap × {q_lambda, q_raw_lam} × Ω 4종
+    # ════════════════════════════════════════════════════════════════════════
+    # 이미 존재: q × omega=he_litterman 2개
+    #   prior_eq_q_lambda_p_lstm, prior_eq_q_raw_lam_p_lstm
+    # 신규: 2 q × {scaled_half, scaled_double, rmse, ff3_paper} = 8개
+    # ════════════════════════════════════════════════════════════════════════
+
+    # ── q_lambda × Ω 4종 ────────────────────────────────────────────────
+    {**BASELINE, 'name': 'prior_eq_q_lambda_p_lstm_omega_scaled_half',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'scaled', 'omega_scale': 0.5},
+
+    {**BASELINE, 'name': 'prior_eq_q_lambda_p_lstm_omega_scaled_double',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'scaled', 'omega_scale': 2.0},
+
+    {**BASELINE, 'name': 'prior_eq_q_lambda_p_lstm_omega_rmse',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'rmse'},
+
+    {**BASELINE, 'name': 'prior_eq_q_lambda_p_lstm_omega_paper',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'ff3_paper'},
+
+    # ── q_raw_lam × Ω 4종 ───────────────────────────────────────────────
+    {**BASELINE, 'name': 'prior_eq_q_raw_lam_p_lstm_omega_scaled_half',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'scaled', 'omega_scale': 0.5},
+
+    {**BASELINE, 'name': 'prior_eq_q_raw_lam_p_lstm_omega_scaled_double',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'scaled', 'omega_scale': 2.0},
+
+    {**BASELINE, 'name': 'prior_eq_q_raw_lam_p_lstm_omega_rmse',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'rmse'},
+
+    {**BASELINE, 'name': 'prior_eq_q_raw_lam_p_lstm_omega_paper',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'ff3_paper'},
 
 ]
 
