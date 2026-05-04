@@ -115,6 +115,39 @@ EXPERIMENTS = [
      'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'rp',
      'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
 
+    # ════════════════════════════════════════════════════════════════════════
+    # [윤서 추가 실험] prior 1/N × p_weight vol_mcap × Q 동적 조합 7개
+    # ════════════════════════════════════════════════════════════════════════
+    # 목적: baseline 대비 prior·p·q 슬롯별 변경 효과를 OFAT + 조합으로 검증
+    # ════════════════════════════════════════════════════════════════════════
+
+    # ── prior=1/N × Q 동적 ────────────────────────────────────────────────
+    {**BASELINE, 'name': 'prior_eq_q_lambda',
+     'prior': 'capm_eq', 'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    {**BASELINE, 'name': 'prior_eq_q_raw_lam',
+     'prior': 'capm_eq', 'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    # ── p=vol_mcap × Q 동적 ───────────────────────────────────────────────
+    {**BASELINE, 'name': 'p_vol_mcap_q_lambda',
+     'p_weight': 'vol_mcap', 'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    {**BASELINE, 'name': 'p_vol_mcap_q_raw_lam',
+     'p_weight': 'vol_mcap', 'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    # ── prior=1/N × p=vol_mcap (Q fixed) ──────────────────────────────────
+    {**BASELINE, 'name': 'prior_eq_p_vol_mcap',
+     'prior': 'capm_eq', 'p_weight': 'vol_mcap'},
+
+    # ── 모두 변경: 1/N + vol_mcap + Q 동적 ────────────────────────────────
+    {**BASELINE, 'name': 'prior_eq_p_vol_mcap_q_lambda',
+     'prior': 'capm_eq', 'p_weight': 'vol_mcap',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    {**BASELINE, 'name': 'prior_eq_p_vol_mcap_q_raw_lam',
+     'prior': 'capm_eq', 'p_weight': 'vol_mcap',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
+
 ]
 
 
