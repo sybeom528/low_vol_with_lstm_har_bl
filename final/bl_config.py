@@ -456,6 +456,13 @@ EXPERIMENTS = [
      'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
      'q_mode': 'inv_lambda', 'q_value': 0.003, 'lam_mean': 2.5,
      'omega_mode': 'ff3_paper'},
+    # ── [비교군] HRP — Hierarchical Risk Parity ──────────────────────────────
+    # q_mode='hrp' → walk_forward에서 BL 건너뛰고 HRP 가중치 직접 산출
+    {**BASELINE, 'name': 'hrp_trailing',
+     'q_mode': 'hrp'},                          # 과거 Ledoit-Wolf 공분산으로 HRP
+
+    {**BASELINE, 'name': 'hrp_lstm',
+     'q_mode': 'hrp', 'p_mode': 'lstm_predicted'},  # LSTM 예측 vol²로 대각 교체 후 HRP
 
 ]
 
