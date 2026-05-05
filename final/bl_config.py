@@ -349,6 +349,114 @@ EXPERIMENTS = [
      'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5,
      'omega_mode': 'ff3_paper'},
 
+    # ════════════════════════════════════════════════════════════════════════
+    # [윤서 prior_rp 매트릭스] prior=rp + LSTM × q ∈ {lambda, raw_lam} × p ∈ {mcap, eq, rp} × Ω ∈ {he, paper, rmse}
+    # ════════════════════════════════════════════════════════════════════════
+    # 기존 2개: prior_rp_p_lstm_mcap_q_lambda, prior_rp_p_lstm_mcap_q_raw_lam (둘 다 ω=he)
+    # 신규 16개로 18-cell 매트릭스 완성
+    # ════════════════════════════════════════════════════════════════════════
+
+    # ── q=lambda × p ∈ {eq, rp} × ω=he (2개) ─────────────────────
+    {**BASELINE, 'name': 'prior_rp_p_lstm_eq_q_lambda',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'eq',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_rp_q_lambda',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'rp',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    # ── q=lambda × p × ω ∈ {paper, rmse} (6개) ───────────────────
+    {**BASELINE, 'name': 'prior_rp_p_lstm_mcap_q_lambda_omega_paper',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'ff3_paper'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_mcap_q_lambda_omega_rmse',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'rmse'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_eq_q_lambda_omega_paper',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'eq',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'ff3_paper'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_eq_q_lambda_omega_rmse',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'eq',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'rmse'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_rp_q_lambda_omega_paper',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'rp',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'ff3_paper'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_rp_q_lambda_omega_rmse',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'rp',
+     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'rmse'},
+
+    # ── q=raw_lam × p ∈ {eq, rp} × ω=he (2개) ────────────────────
+    {**BASELINE, 'name': 'prior_rp_p_lstm_eq_q_raw_lam',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'eq',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_rp_q_raw_lam',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'rp',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
+
+    # ── q=raw_lam × p × ω ∈ {paper, rmse} (6개) ──────────────────
+    {**BASELINE, 'name': 'prior_rp_p_lstm_mcap_q_raw_lam_omega_paper',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'ff3_paper'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_mcap_q_raw_lam_omega_rmse',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'rmse'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_eq_q_raw_lam_omega_paper',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'eq',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'ff3_paper'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_eq_q_raw_lam_omega_rmse',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'eq',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'rmse'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_rp_q_raw_lam_omega_paper',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'rp',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'ff3_paper'},
+
+    {**BASELINE, 'name': 'prior_rp_p_lstm_rp_q_raw_lam_omega_rmse',
+     'prior': 'capm_rp', 'p_mode': 'lstm_predicted', 'p_weight': 'rp',
+     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'rmse'},
+
+    # ── q_inv_lambda × Ω 4종 (매트릭스 완성) ─────────────────────────────
+    {**BASELINE, 'name': 'prior_eq_q_inv_lambda_p_lstm_omega_scaled_half',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'inv_lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'scaled', 'omega_scale': 0.5},
+
+    {**BASELINE, 'name': 'prior_eq_q_inv_lambda_p_lstm_omega_scaled_double',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'inv_lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'scaled', 'omega_scale': 2.0},
+
+    {**BASELINE, 'name': 'prior_eq_q_inv_lambda_p_lstm_omega_rmse',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'inv_lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'rmse'},
+
+    {**BASELINE, 'name': 'prior_eq_q_inv_lambda_p_lstm_omega_paper',
+     'prior': 'capm_eq', 'p_mode': 'lstm_predicted',
+     'q_mode': 'inv_lambda', 'q_value': 0.003, 'lam_mean': 2.5,
+     'omega_mode': 'ff3_paper'},
+
 ]
 
 
