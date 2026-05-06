@@ -18,6 +18,7 @@ wheels/
 *.parquet
 *.bak
 *.zip
+*.tar.gz
 
 # Jupyter Notebook
 .ipynb_checkpoints/
