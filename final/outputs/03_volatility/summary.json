@@ -1,0 +1,21 @@
+{
+  "phase": "Phase 3 Stockwise (final 통합)",
+  "csv_md5": "1e9ab2faf63fdfd4abbb54083a1cb0fb",
+  "n_tickers": 613,
+  "date_range": "2007-04-23 ~ 2025-12-01",
+  "rmse_avg": {
+    "lstm": 0.5288314863354618,
+    "har": 0.4014873032177677,
+    "ensemble": 0.39099477579885555
+  },
+  "best_model_count": {
+    "ensemble": 398,
+    "har": 199,
+    "lstm": 16
+  },
+  "reproducibility": {
+    "random_seed": 42,
+    "force_recompute": false,
+    "cache_used": true
+  }
+}
