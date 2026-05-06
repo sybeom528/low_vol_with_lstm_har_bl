@@ -178,41 +178,6 @@ def compute_Q_raw_lam(
     return float(max(0.0, q_base * (lam_raw / lam_mean)))
 
 
-def compute_Q_ff3(
-    P: pd.Series,
-    ret_matrix: pd.DataFrame,
-    ff3_train: pd.DataFrame,
-    rf_train: pd.Series,
-) -> float:
-    """
-    FF3 회귀로 각 종목 기대수익률 추정 → Q = P @ r_hat.
-    ret_matrix: 훈련 구간 월별 수익률 (date × ticker)
-    """
-    view_tickers = P[P != 0].index.intersection(ret_matrix.columns).tolist()
-    if not view_tickers:
-        return 0.003
-
-    ff3_aligned = ff3_train.reindex(ret_matrix.index).dropna()
-    rf_aligned  = rf_train.reindex(ff3_aligned.index).fillna(0)
-    n = len(ff3_aligned)
-    if n < 24:
-        return 0.003
-
-    X      = np.column_stack([np.ones(n), ff3_aligned[['mkt_rf', 'smb', 'hml']].values])
-    X_next = np.array([1.0] + ff3_aligned[['mkt_rf', 'smb', 'hml']].mean().tolist())
-    rf_next = float(rf_train.iloc[-1]) if len(rf_train) > 0 else 0.0
-
-    r_hat = pd.Series(0.0, index=ret_matrix.columns)
-    for t in view_tickers:
-        y = ret_matrix[t].reindex(ff3_aligned.index) - rf_aligned
-        valid = y.notna()
-        if valid.sum() < 12:
-            continue
-        coef = np.linalg.lstsq(X[valid], y[valid].values, rcond=None)[0]
-        r_hat[t] = float(X_next @ coef) + rf_next
-
-    return float(P.reindex(ret_matrix.columns).fillna(0) @ r_hat)
-
 
 def compute_Q_ff3_paper(
     P: pd.Series,
@@ -251,28 +216,6 @@ def compute_Q_ff3_paper(
     return float(P_vec @ r_hat_next)
 
 
-def compute_Q_spread(
-    panel_train: pd.DataFrame,
-    pct: float = 0.30,
-    vol_col: str = 'vol_21d',
-    ret_col: str = 'ret_1m',
-) -> float:
-    """
-    훈련 구간 월별 저변동-고변동 수익률 스프레드 평균.
-    look-ahead bias 없음 (훈련 구간 과거 데이터만 사용).
-    """
-    spreads = []
-    for _, group in panel_train.groupby(level='date'):
-        valid = group[[vol_col, ret_col]].dropna()
-        if len(valid) < 20:
-            continue
-        n_g = max(1, int(len(valid) * pct))
-        sorted_idx = valid[vol_col].sort_values().index
-        low_r  = valid.loc[sorted_idx[:n_g],  ret_col].mean()
-        high_r = valid.loc[sorted_idx[-n_g:], ret_col].mean()
-        spreads.append(low_r - high_r)
-    return float(np.nanmean(spreads)) if spreads else 0.003
-
 
 def compute_Q_vol_spread(
     P: pd.Series,
@@ -307,27 +250,6 @@ def compute_Q_vol_spread(
     return float(q_base * np.clip(spread / spread_ref, 0.1, 3.0))
 
 
-def compute_Q_regime(
-    spy_series_train: pd.Series,
-    q_table: dict,
-    lookback: int = 12,
-) -> float:
-    """
-    최근 lookback 개월 SPY 변동성으로 레짐 분류 → Q 결정.
-    q_table 예시: {'low_vol': 0.001, 'normal': 0.003, 'high_vol': 0.006}
-    레짐 기준: 연환산 시장변동성 > 20% → high_vol / > 12% → normal / else → low_vol
-    
-    레짐은 간단하게만 구현. 추후 HMM으로 고도화 예정
-    """
-    recent = spy_series_train.iloc[-lookback:] if len(spy_series_train) >= lookback else spy_series_train
-    ann_vol = recent.std() * ANN
-    if ann_vol > 0.20:
-        return float(q_table.get('high_vol', 0.006))
-    elif ann_vol > 0.12:
-        return float(q_table.get('normal',   0.003))
-    else:
-        return float(q_table.get('low_vol',  0.001))
-
 
 # ══════════════════════════════════════════════════════════════
 # 5. OMEGA — 뷰 불확실성
@@ -338,15 +260,6 @@ def compute_omega_he(P: pd.Series, Sigma: pd.DataFrame, tau: float) -> float:
     p = P.values
     return max(float(tau * p @ Sigma.values @ p), 1e-8)
 
-
-def compute_omega_scaled(
-    P: pd.Series,
-    Sigma: pd.DataFrame,
-    tau: float,
-    scale: float,
-) -> float:
-    """He-Litterman × scale 배수. scale < 1 → 뷰에 더 자신감 / scale > 1 → 덜 자신감."""
-    return max(compute_omega_he(P, Sigma, tau) * scale, 1e-8)
 
 
 def compute_omega_rmse(
@@ -366,13 +279,9 @@ def compute_omega_rmse(
     아니면 그냥 추가해도 되고
     """
     scale = (pred_rmse / base_rmse) ** 2 if base_rmse > 0 else 1.0
-    return compute_omega_scaled(P, Sigma, tau, scale)
+    return max(compute_omega_he(P, Sigma, tau) * scale, 1e-8)
 
 
-# ── compute_omega_paper (FF3 회귀 잔차 분산 방식)는 dead code로 제거됨 ──
-# (2026-05-06): 99_run의 walk_forward가 omega_mode='ff3_paper' 시 직접
-# inline 코드 (Ω_t = (Q_{t-1} − actual_{t-1})²) 를 사용. 이 함수는 호출되지
-# 않아 삭제. 옛 git history에서 복구 가능.
 
 
 # ══════════════════════════════════════════════════════════════
@@ -434,85 +343,6 @@ def optimize_portfolio(
     return pd.Series(np.ones(n) / n, index=mu_BL.index)
 
 
-# ══════════════════════════════════════════════════════════════
-# 7. HRP — Hierarchical Risk Parity
-# ══════════════════════════════════════════════════════════════
-
-def _hrp_cluster_var(cov_vals: np.ndarray, idx: np.ndarray) -> float:
-    """클러스터 내 IVP(역분산) 포트폴리오의 분산."""
-    sub   = cov_vals[np.ix_(idx, idx)]
-    inv_d = 1.0 / np.maximum(np.diag(sub), 1e-12)
-    w     = inv_d / inv_d.sum()
-    return float(w @ sub @ w)
-
-
-def _hrp_bisect(cov_vals: np.ndarray, sorted_idx: list) -> dict:
-    """재귀 이분법 → {배열 인덱스: 가중치}."""
-    if len(sorted_idx) == 1:
-        return {sorted_idx[0]: 1.0}
-    mid   = len(sorted_idx) // 2
-    left  = sorted_idx[:mid]
-    right = sorted_idx[mid:]
-    vl    = _hrp_cluster_var(cov_vals, np.array(left))
-    vr    = _hrp_cluster_var(cov_vals, np.array(right))
-    alpha = 1.0 - vl / (vl + vr)
-    return {**{k: v * alpha       for k, v in _hrp_bisect(cov_vals, left).items()},
-            **{k: v * (1 - alpha) for k, v in _hrp_bisect(cov_vals, right).items()}}
-
-
-def compute_hrp_weights(Sigma: pd.DataFrame, max_weight: float = 0.10) -> pd.Series:
-    """
-    Hierarchical Risk Parity (Lopez de Prado 2016).
-    1. 상관계수 → 거리 행렬 d = sqrt((1-ρ)/2)
-    2. Single-linkage 계층 클러스터링 → 준대각화(leaves_list)
-    3. 재귀 이분법: 클러스터 IVP 분산 역비례 배분
-    Sigma: 월간 단위 공분산 (pd.DataFrame)
-    """
-    from scipy.cluster.hierarchy import linkage, leaves_list
-    from scipy.spatial.distance import squareform
-
-    cov  = Sigma.values.copy()
-    std  = np.sqrt(np.maximum(np.diag(cov), 1e-12))
-    corr = cov / (std[:, None] * std[None, :])
-    corr = np.clip(corr, -1.0, 1.0)
-    np.fill_diagonal(corr, 1.0)
-
-    dist = np.sqrt(np.maximum((1.0 - corr) / 2.0, 0.0))
-    np.fill_diagonal(dist, 0.0)
-
-    sort_ix = list(leaves_list(linkage(squareform(dist), method='single')))
-    raw_w   = _hrp_bisect(cov, sort_ix)
-
-    w = pd.Series({Sigma.index[k]: v for k, v in raw_w.items()})
-    w = w.reindex(Sigma.index).fillna(0.0)
-
-    # 반복 clip: 재정규화 후에도 max_weight를 초과할 수 있으므로 수렴까지 반복
-    for _ in range(30):
-        if not (w > max_weight + 1e-10).any():
-            break
-        w = w.clip(upper=max_weight)
-        if w.sum() > 0:
-            w = w / w.sum()
-
-    return w
-
-
-def build_cov_lstm(hist_cov: pd.DataFrame, lstm_vols: pd.Series) -> pd.DataFrame:
-    """
-    역사적 상관관계 유지 + LSTM 예측 vol²로 대각(분산) 교체.
-    hist_cov : pd.DataFrame (Ledoit-Wolf, 월간 단위. 대각 = monthly_var)
-    lstm_vols: pd.Series (vol_21d 예측값 = monthly std, 티커 인덱스)
-    """
-    tickers  = hist_cov.index
-    std_hist = np.sqrt(np.maximum(np.diag(hist_cov.values), 1e-12))
-    corr     = hist_cov.values / (std_hist[:, None] * std_hist[None, :])
-    corr     = np.clip(corr, -1.0, 1.0)
-    np.fill_diagonal(corr, 1.0)
-
-    new_std = lstm_vols.reindex(tickers).fillna(pd.Series(std_hist, index=tickers)).values
-    new_cov = corr * (new_std[:, None] * new_std[None, :])
-    return pd.DataFrame(new_cov, index=tickers, columns=tickers)
-
 
 # ══════════════════════════════════════════════════════════════
 # 8. 거래비용 (Phase 3 방식)
@@ -573,12 +403,14 @@ def compute_metrics(
 
     # ── 기본 ──────────────────────────────────────────────────
     sr     = excess.mean() / excess.std() * ANN if excess.std() > 0 else np.nan
-    cagr   = ret.mean() * 12
     vol    = ret.std() * ANN
     cum    = (1 + ret).cumprod()
     dd     = (cum - cum.cummax()) / cum.cummax()
     mdd    = dd.min()
-    calmar = cagr / abs(mdd) if mdd != 0 else np.nan
+    # CAGR — 복리(기하평균) 연환산: (1+ret).prod()^(12/n) - 1
+    n_months = len(ret)
+    cagr   = (cum.iloc[-1] ** (12.0 / n_months) - 1.0) if n_months > 0 and cum.iloc[-1] > 0 else np.nan
+    calmar = cagr / abs(mdd) if mdd != 0 and not np.isnan(cagr) else np.nan
 
     # ── Sortino (하방 변동성 기준) ────────────────────────────
     downside     = excess[excess < 0]
@@ -607,12 +439,18 @@ def compute_metrics(
 
     # ── 시장 대비 지표 (mkt_ret 있을 때만) ───────────────────
     if mkt_ret is not None:
-        mkt_a     = mkt_ret.reindex(ret.index).fillna(0)
-        mkt_exc   = mkt_a - rf_a
-        cov_mat   = np.cov(excess.values, mkt_exc.values)
-        beta      = cov_mat[0, 1] / cov_mat[1, 1] if cov_mat[1, 1] > 0 else np.nan
-        alpha     = (excess.mean() - beta * mkt_exc.mean()) * 12 if not np.isnan(beta) else np.nan
-        treynor   = excess.mean() * 12 / beta if (not np.isnan(beta) and beta != 0) else np.nan
+        mkt_a   = mkt_ret.reindex(ret.index)
+        # NaN 동기화: 둘 중 하나라도 NaN인 시점 제거 (np.cov NaN 전염 방지)
+        valid   = excess.notna() & mkt_a.notna() & rf_a.notna()
+        if valid.sum() >= 12:
+            ex_v    = excess[valid].values
+            mkt_exc = (mkt_a[valid] - rf_a[valid]).values
+            cov_mat = np.cov(ex_v, mkt_exc)
+            beta    = cov_mat[0, 1] / cov_mat[1, 1] if cov_mat[1, 1] > 0 else np.nan
+            alpha   = (ex_v.mean() - beta * mkt_exc.mean()) * 12 if not np.isnan(beta) else np.nan
+            treynor = ex_v.mean() * 12 / beta if (not np.isnan(beta) and beta != 0) else np.nan
+        else:
+            beta, alpha, treynor = np.nan, np.nan, np.nan
     else:
         beta, alpha, treynor = np.nan, np.nan, np.nan
 

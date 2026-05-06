@@ -1,5 +1,5 @@
 """
-master_table.py — 149개 실험을 한 DataFrame으로 통합.
+master_table.py — 156개 실험을 한 DataFrame으로 통합 (2026-05-07).
 
 results/*.pkl 전부 로드 → config dict 파싱 → 표준 토큰 + 성과지표.
 파일명 그대로 유지하고, 분석은 canonical 컬럼 기준으로 통일.
@@ -58,18 +58,12 @@ OMEGA_SHORT = {
     'he_litterman': 'he',
     'rmse'        : 'rms',
     'ff3_paper'   : 'pap',
-    # 'scaled'는 _omega_short()에서 scale 값 보고 sh/sd 부여
+    # 'scaled' 모드는 2026-05-07 제거 (신뢰성 부족)
 }
 
 
-def _omega_short(omega_mode: str, omega_scale: float) -> str:
-    """omega_mode + omega_scale → 약어."""
-    if omega_mode == 'scaled':
-        if abs(omega_scale - 0.5) < 1e-9:
-            return 'sh'
-        if abs(omega_scale - 2.0) < 1e-9:
-            return 'sd'
-        return f'sc{omega_scale}'
+def _omega_short(omega_mode: str, omega_scale: float = 1.0) -> str:
+    """omega_mode → 약어. omega_scale 인자는 deprecated (호환성용)."""
     return OMEGA_SHORT.get(omega_mode, omega_mode)
 
 
@@ -109,19 +103,15 @@ def parse_config(cfg: dict) -> dict:
     }
 
 
-# ── 5-레짐 정의 (김윤서/low_risk/regime_analysis.py 기준) ──────────────
+# ── 3-레짐 정의 (HMM n=3 구조전환점, 2026-05-07) ──────────────────────
+# 근거: HMM Bull/Neutral/Bear (≥63거래일 지속 필터) — N→B 전환점 ~2012-06, ~2020-01
 # 본 프로젝트 단일 기간 시스템. mt와 rt 모두 동일 레짐 사용.
-# Sortino/MDD/Sharpe 변동성 평가 — 거시환경 차이가 뚜렷한 시장 국면.
-REGIMES_5 = [
-    ('R1_회복',    '2010-01-01', '2014-12-31'),  # Post-GFC + 유럽위기
-    ('R2_확장',    '2015-01-01', '2018-12-31'),  # 미국 회복 + 다중충격
-    ('R3_COVID',   '2019-01-01', '2020-12-31'),  # 코로나 크래시 + 재개
-    ('R4_베어',    '2021-01-01', '2022-12-31'),  # 인플레 + 22년 베어
-    ('R5_AI랠리',  '2023-01-01', '2024-12-31'),  # Mag7 강세
+REGIMES = [
+    ('R1_회복',  '2010-01-01', '2012-06-30'),  # Post-GFC + EU위기 (30개월)
+    ('R2_확장',  '2012-07-01', '2019-12-31'),  # 장기 Bull (90개월)
+    ('R3_변동',  '2020-01-01', '2024-12-31'),  # COVID + 22 베어 + AI랠리 (60개월)
 ]
-
-# 호환용 별칭 — 옛 PERIODS_DEFAULT 자리에 REGIMES_5 dict 형식 노출
-PERIODS_DEFAULT = {label: (s, e) for label, s, e in REGIMES_5}
+PERIODS_DEFAULT = {label: (s, e) for label, s, e in REGIMES}
 
 
 def _sharpe_subperiod(ret: pd.Series, rf: pd.Series, start: str, end: str) -> float:
@@ -185,7 +175,15 @@ def build_master_table(
         row['eff_n_avg']    = float(comp['eff_n'].mean())    if (isinstance(comp, pd.DataFrame) and 'eff_n'    in comp.columns) else np.nan
 
         # 전체기간 성과
-        m = compute_metrics(ret, rf, label=pkl.stem, mkt_ret=spy_ret)
+        # ⚠️ 베타/알파 정합성: pkl 안에 저장된 spy_ret(walk_forward forward-aligned)을
+        # 우선 사용. panel['spy_ret']은 backward-aligned이라 1-month 시차 발생.
+        # 각 pkl의 spy_ret이 ret과 동일 인덱스·forward 방향이라 가장 정확.
+        spy_for_pkl = res.get('spy_ret', pd.Series(dtype=float))
+        if isinstance(spy_for_pkl, pd.Series) and len(spy_for_pkl.dropna()) >= 12:
+            mkt_input = spy_for_pkl
+        else:
+            mkt_input = spy_ret  # fallback (구버전 pkl 호환)
+        m = compute_metrics(ret, rf, label=pkl.stem, mkt_ret=mkt_input)
         for k in ('sharpe', 'sortino', 'cagr', 'vol', 'mdd', 'calmar',
                   'cvar_5', 'win_rate', 'beta', 'alpha', 'mdd_duration'):
             row[k] = m.get(k, np.nan)
@@ -230,24 +228,22 @@ def build_regime_table(
     regimes: list = None,
 ) -> pd.DataFrame:
     """
-    각 실험 × 5 레짐별 sharpe/sortino/mdd + 레짐 간 변동성 지표.
+    각 실험 × 3 레짐별 sharpe/sortino/mdd + 레짐 간 변동성 지표.
 
     핵심 컬럼:
-      sortino_R1..R5   : 레짐별 Sortino
-      sharpe_R1..R5    : 레짐별 Sharpe
-      mdd_R1..R5       : 레짐별 MDD
-      sortino_mean     : 5 레짐 평균
-      sortino_std      : 5 레짐 표준편차 (작을수록 안정)
-      sortino_min      : 5 레짐 최저 (worst case)
-      sortino_cv       : sortino_std / |sortino_mean| (변동계수)
-      sharpe_std       : 5 레짐 Sharpe std
-      mdd_worst        : 5 레짐 중 가장 나쁜 MDD
-      stability_score  : sortino_mean − sortino_std (안정성 + 평균 종합)
-
-    높은 stability_score = 모든 레짐에서 일관되게 좋은 후보.
+      sortino_R1..R3   : 레짐별 Sortino
+      sharpe_R1..R3    : 레짐별 Sharpe
+      mdd_R1..R3       : 레짐별 MDD
+      sortino_mean     : 3 레짐 평균 (공격형 정렬 키)
+      sortino_std      : 3 레짐 표준편차
+      sortino_ir       : sortino_mean / sortino_std (균형형 정렬 키)
+      sharpe_mean      : 3 레짐 평균
+      sharpe_std       : 3 레짐 표준편차
+      sharpe_ir        : sharpe_mean / sharpe_std
+      mdd_worst        : 3 레짐 중 가장 나쁜 MDD (안정형 정렬 키)
     """
     if regimes is None:
-        regimes = REGIMES_5
+        regimes = REGIMES
 
     results_dir = Path(results_dir)
     rows = []
@@ -279,16 +275,11 @@ def build_regime_table(
         if sortinos:
             rec['sortino_mean'] = round(np.mean(sortinos), 3)
             rec['sortino_std']  = round(np.std(sortinos),  3)
-            rec['sortino_min']  = round(np.min(sortinos),  3)
-            rec['sortino_cv']   = round(np.std(sortinos) / abs(np.mean(sortinos)), 3) if np.mean(sortinos) != 0 else np.nan
-            rec['stability_score'] = round(np.mean(sortinos) - np.std(sortinos), 3)
         if sharpes:
             rec['sharpe_mean']  = round(np.mean(sharpes), 3)
             rec['sharpe_std']   = round(np.std(sharpes),  3)
-            rec['sharpe_min']   = round(np.min(sharpes),  3)
         if mdds:
             rec['mdd_worst']    = round(np.min(mdds),     3)
-            rec['mdd_std']      = round(np.std(mdds),     3)
 
         rows.append(rec)
 

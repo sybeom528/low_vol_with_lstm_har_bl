@@ -1,16 +1,20 @@
 """
-analyze_plots.py — 6단계 분석용 시각화 + 심층분석 함수.
+analyze_plots.py — 99_analyze.ipynb 시각화 + 심층분석 함수.
 
 master_table.build_master_table()로 만든 DataFrame을 입력받음.
 원본 ret 시리즈가 필요한 함수는 results_dir에서 즉석 로드.
 
-함수
+함수 (현재 활성, 2026-05-07)
 ----
-1. plot_marginal_effects      : 슬롯별 sharpe 분포 (boxplot 5장)
-2. plot_matrix_heatmap        : 108-cell 매트릭스 히트맵 + 행/열 평균
-3. plot_top_n_analysis        : Top-N equity / rolling sharpe / drawdown
-4. crisis_comparison          : 위기구간 행동 비교 표
-5. benchmark_table            : 벤치마크 대비 IR / Δsharpe / Δmdd
+1. plot_marginal_effects        : 슬롯별 분포 boxplot 5장 (J2)
+2. plot_matrix_heatmap          : prior×pw vs q×Ω 매트릭스 + 행/열 평균 (J3)
+3. plot_top_n_analysis          : Top-N equity / rolling sharpe / drawdown (J4)
+4. crisis_comparison            : 위기구간 행동 비교 표 (J5)
+5. benchmark_table              : 벤치마크 대비 IR / Δsharpe / Δmdd (J6)
+6. plot_styled_regime_dashboard : Top N × 3 metric × 3-레짐 통합 대시보드 (K2, K2-H)
+
+제거된 dead code (2026-05-07): plot_regime_heatmap, regime_winners_table,
+styled_regime_table — K3/K5 셀 삭제 + dashboard로 대체되어 미사용.
 """
 import pickle
 import platform
@@ -42,8 +46,8 @@ CRISIS_PERIODS = {
 # ── 표준 벤치마크 ──────────────────────────────────────────────────────
 BENCHMARK_NAMES = ['baseline', 'capm_no_bl', 'naive_lowvol']
 
-# ── 5-레짐 라벨 (master_table.REGIMES_5와 동기) ────────────────────────
-REGIME_LABELS_5 = ['R1_회복', 'R2_확장', 'R3_COVID', 'R4_베어', 'R5_AI랠리']
+# ── 3-레짐 라벨 (HMM n=3 기반, master_table.REGIMES 동기) ─────────────
+REGIME_LABELS = ['R1_회복', 'R2_확장', 'R3_변동']
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -464,106 +468,8 @@ def benchmark_table(
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 6. 레짐별 안정성 분석 (Sortino 우선)
+# 6. 레짐별 안정성 분석 — Top 20 × 3 metric 통합 대시보드
 # ══════════════════════════════════════════════════════════════════════
-def plot_regime_heatmap(
-    rt: pd.DataFrame,
-    metric: str = 'sortino',
-    top_n: int = 20,
-    rank_by: str = None,
-    regime_labels: list = None,
-    figsize=(17, 11),
-    cmap: str = 'RdYlGn',
-    save_path=None,
-):
-    """
-    Top N 후보 × 5 레짐 metric 히트맵 + worst/std 막대.
-
-    Parameters
-    ----------
-    rt : build_regime_table() 결과
-    metric : 'sortino' | 'sharpe' | 'mdd'
-    rank_by : None이면 metric에 맞춰 자동 (sortino→stability_score, sharpe→sharpe_mean, mdd→mdd_worst)
-    """
-    if regime_labels is None:
-        regime_labels = REGIME_LABELS_5
-
-    if rank_by is None:
-        rank_by = {'sortino': 'sortino_min',
-                   'sharpe' : 'sharpe_mean',
-                   'mdd'    : 'mdd_worst'}.get(metric, metric)
-
-    # rank_by 항상 존중 (mdd/sortino/sharpe 모두 큰 게 좋도록 정의됨)
-    top = rt.nlargest(top_n, rank_by)
-    cols = [f'{metric}_{lbl}' for lbl in regime_labels]
-    data = top[cols].values
-
-    fig = plt.figure(figsize=figsize)
-    gs = fig.add_gridspec(1, 3, width_ratios=[12, 1.5, 1.5], wspace=0.05)
-    ax_main = fig.add_subplot(gs[0, 0])
-    ax_min  = fig.add_subplot(gs[0, 1], sharey=ax_main)
-    ax_std  = fig.add_subplot(gs[0, 2], sharey=ax_main)
-
-    vmin, vmax = np.nanmin(data), np.nanmax(data)
-    if metric == 'mdd':
-        vmax = 0
-    im = ax_main.imshow(data, cmap=cmap, aspect='auto', vmin=vmin, vmax=vmax)
-    ax_main.set_xticks(range(len(regime_labels)))
-    ax_main.set_xticklabels(regime_labels, rotation=20, ha='right', fontsize=11)
-    ax_main.set_yticks(range(len(top)))
-    # 행 라벨 = "순위. canonical 이름" — colorbar 왼쪽 배치 시에도 잘 보이도록
-    rank_labels = [f'{i+1:>2}. {n}' for i, n in enumerate(top['canonical'].values)]
-    ax_main.set_yticklabels(rank_labels, fontsize=11)
-    ax_main.tick_params(axis='y', pad=4)
-    ax_main.set_xlabel('레짐')
-    ax_main.set_title(f'Top {top_n} × 5-레짐 {metric}  (정렬 키: {rank_by})\n각 행은 좌측 라벨의 후보 — 순위. canonical_이름',
-                      fontsize=12)
-
-    for i in range(data.shape[0]):
-        for j in range(data.shape[1]):
-            v = data[i, j]
-            if not np.isnan(v):
-                ax_main.text(j, i, f'{v:.2f}', ha='center', va='center', fontsize=7)
-
-    # min 막대 (sortino_min 또는 mdd_worst)
-    if metric == 'mdd':
-        min_vals = top['mdd_worst'].values
-        ax_min.barh(range(len(top)), min_vals, color='#e74c3c', alpha=0.8)
-        ax_min.set_xlabel('mdd_worst')
-    elif metric == 'sortino':
-        min_vals = top['sortino_min'].values
-        ax_min.barh(range(len(top)), min_vals, color='#3498db', alpha=0.8)
-        ax_min.set_xlabel('sortino_min')
-    else:
-        min_vals = top.get('sharpe_min', pd.Series([np.nan]*len(top))).values
-        ax_min.barh(range(len(top)), min_vals, color='#3498db', alpha=0.8)
-        ax_min.set_xlabel('sharpe_min')
-    ax_min.set_yticks([])
-    for i, v in enumerate(min_vals):
-        if not np.isnan(v):
-            ax_min.text(v, i, f' {v:.2f}', va='center', fontsize=7)
-
-    # std 막대 (낮을수록 안정)
-    std_col = {'sortino': 'sortino_std',
-               'sharpe' : 'sharpe_std',
-               'mdd'    : 'mdd_std'}.get(metric, 'sortino_std')
-    if std_col in top.columns:
-        std_vals = top[std_col].values
-        ax_std.barh(range(len(top)), std_vals, color='#f39c12', alpha=0.8)
-        ax_std.set_xlabel(std_col)
-        ax_std.set_yticks([])
-        for i, v in enumerate(std_vals):
-            if not np.isnan(v):
-                ax_std.text(v, i, f' {v:.2f}', va='center', fontsize=7)
-
-    # colorbar는 하단 가로 (좌측에 두면 yticklabels 자리 침범 → 라벨 안 보임)
-    fig.colorbar(im, ax=[ax_main, ax_min, ax_std], fraction=0.02, pad=0.04,
-                 orientation='horizontal', location='bottom', label=metric)
-
-    if save_path:
-        fig.savefig(save_path, dpi=120, bbox_inches='tight')
-    return fig
-
 
 def plot_styled_regime_dashboard(
     rt: pd.DataFrame,
@@ -573,13 +479,13 @@ def plot_styled_regime_dashboard(
     save_path=None,
 ):
     """
-    Top N × 3 metric (sortino/sharpe/mdd) × 5 레짐을 단일 matplotlib 그림으로.
-    히트맵 6장 대체용 — 1 figure, 3 panel 병치.
+    Top N × 3 metric (sortino/sharpe/mdd) × 3 레짐을 단일 matplotlib 그림으로.
+    1 figure, 3 panel 병치.
 
     Returns matplotlib Figure (PNG로 저장 가능).
     """
     if regime_labels is None:
-        regime_labels = REGIME_LABELS_5
+        regime_labels = REGIME_LABELS
 
     top = rt.nlargest(top_n, rank_by).reset_index(drop=True)
     canonicals = top['canonical'].tolist()
@@ -622,7 +528,7 @@ def plot_styled_regime_dashboard(
     axes[0].set_yticks(range(top_n))
     axes[0].set_yticklabels(rank_labels, fontsize=10)
 
-    fig.suptitle(f'Top {top_n} × 5 레짐 통합 대시보드 (정렬: {rank_by})\n'
+    fig.suptitle(f'Top {top_n} × 3 레짐 통합 대시보드 (정렬: {rank_by})\n'
                  f'좌→우: SORTINO / SHARPE / MDD  ·  녹=좋음 / 적=나쁨',
                  fontsize=13, y=1.0)
 
@@ -631,74 +537,4 @@ def plot_styled_regime_dashboard(
     return fig
 
 
-def styled_regime_table(
-    rt: pd.DataFrame,
-    rank_by: str = 'sortino_ir',
-    top_n: int = 10,
-    regime_labels: list = None,
-):
-    """
-    Top N × 3 metric × 5 regime을 단일 styled DataFrame으로 표시.
-    히트맵 6장 대체용 — 색 그라데이션으로 한눈에 비교.
 
-    Returns
-    -------
-    pd.io.formats.style.Styler — Jupyter에서 색깔과 함께 렌더링
-    """
-    if regime_labels is None:
-        regime_labels = REGIME_LABELS_5
-
-    top = rt.nlargest(top_n, rank_by).reset_index(drop=True)
-    top.index = top.index + 1  # 1부터 시작 (rank)
-
-    cols = ['canonical']
-    for m in ['sortino', 'sharpe', 'mdd']:
-        cols += [f'{m}_{lbl}' for lbl in regime_labels]
-
-    # rank_by 컬럼은 가장 왼쪽에 정렬 키로
-    cols = ['canonical', rank_by] + [c for c in cols if c not in ('canonical', rank_by)]
-    df = top[cols].copy()
-
-    # styling: sortino/sharpe는 큰 게 좋음, mdd는 큰 게=얕은 게 좋음 → 모두 RdYlGn
-    sortino_cols = [f'sortino_{lbl}' for lbl in regime_labels]
-    sharpe_cols  = [f'sharpe_{lbl}' for lbl in regime_labels]
-    mdd_cols     = [f'mdd_{lbl}' for lbl in regime_labels]
-
-    styler = (df.style
-        .background_gradient(subset=sortino_cols, cmap='RdYlGn', axis=None)
-        .background_gradient(subset=sharpe_cols,  cmap='RdYlGn', axis=None)
-        .background_gradient(subset=mdd_cols,     cmap='RdYlGn', axis=None)
-        .format({c: '{:.2f}' for c in sortino_cols + sharpe_cols + [rank_by]})
-        .format({c: '{:.2%}' for c in mdd_cols})
-        .set_caption(f'Top {top_n} × 5 레짐 (정렬: {rank_by})')
-        .set_table_styles([
-            {'selector': 'caption', 'props': [('font-size','14px'),('font-weight','bold')]},
-            {'selector': 'th', 'props': [('font-size','11px')]},
-            {'selector': 'td', 'props': [('font-size','11px'),('text-align','center')]},
-        ])
-    )
-    return styler
-
-
-def regime_winners_table(
-    rt: pd.DataFrame,
-    n: int = 5,
-) -> pd.DataFrame:
-    """
-    각 레짐별 Sortino Top n + 종합 안정성 Top n.
-    빠른 텍스트 보고용.
-    """
-    out = {}
-    for label in REGIME_LABELS_5:
-        col = f'sortino_{label}'
-        if col not in rt.columns:
-            continue
-        top = rt.nlargest(n, col)[['canonical', col, f'mdd_{label}']]
-        top.columns = ['canonical', 'sortino', 'mdd']
-        out[label] = top.reset_index(drop=True)
-    out['stability_overall'] = (
-        rt.nlargest(n, 'stability_score')
-          [['canonical', 'sortino_mean', 'sortino_std', 'sortino_min', 'mdd_worst', 'stability_score']]
-          .reset_index(drop=True)
-    )
-    return out

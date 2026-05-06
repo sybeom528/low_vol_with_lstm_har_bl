@@ -1,6 +1,12 @@
 # Black-Litterman 실험 프레임워크 — 상세 가이드
 
-> **최종 갱신: 2026-05-06** — LSTM σ 피봇, vol_spread/lambda/raw_lam/inv_lambda q_mode, ff3_paper omega, Q 민감도 39 추가 반영. 현재 EXPERIMENTS 총 **214개**.
+> **최종 갱신: 2026-05-07**
+> - omega=scaled 신뢰성 부족으로 제거 (-10 cfg)
+> - Q 민감도: 11 후보 × 4 sweep → baseline 단일 후보 × 4 sweep으로 단순화
+> - CAGR 정의 산술평균 → 기하평균(복리) 수정
+> - β/α 시차 misalignment 버그 수정 (각 pkl의 spy_ret 사용)
+> - vol_mcap sparse 변형 12개 추가 제거 (trailing+lstm 각 1개만 보존)
+> - 현재 EXPERIMENTS 총 **156개** (매트릭스 135 + 비매트릭스 21), results pkl 156개 완성
 
 ---
 
@@ -68,76 +74,171 @@ final/
 
 ---
 
-## 4. 슬롯 키 레퍼런스
+## 4. 슬롯 키 레퍼런스 + 정확한 수식
+
+> **변경 이력 (2026-05-07)**: `omega_mode='scaled'` 신뢰성 부족으로 제거. `omega_scale` 키도 사용 안 됨.
+> CAGR 정의를 산술평균×12 → 기하평균(복리)으로 수정. β/α 시차 misalignment 버그 수정.
+
+### 4-0. 슬롯 키 일람표
 
 | 슬롯 | 선택지 | 기본값 | 설명 |
 |---|---|---|---|
 | `prior` | `capm_mcap` / `capm_eq` / `capm_rp` | `capm_mcap` | Prior π 가중 |
-| `p_mode` | `trailing_vol21` / `trailing_vol252` / `lstm_predicted` | `trailing_vol21` | P 분류 변동성 |
+| `p_mode` | `trailing_vol21` / `trailing_vol252` / `lstm_predicted` | `trailing_vol21` | P 분류용 변동성 |
 | `p_weight` | `mcap` / `eq` / `rp` / `vol_mcap` | `mcap` | P 행렬 가중 |
 | `q_mode` | `fixed` / `vol_spread` / `lambda` / `raw_lam` / `inv_lambda` / `none` / `capm` | `fixed` | Q 결정 방식 |
-| `q_value` | float | `0.003` | fixed/vsp의 Q 값(또는 base) |
-| `omega_mode` | `he_litterman` / `scaled` / `rmse` / `ff3_paper` | `he_litterman` | Ω 계산 방식 |
-| `omega_scale` | float | `1.0` | scaled에서 배수 |
+| `q_value` | float | `0.003` | Q 값(또는 base scaling) |
+| `lam_mean` | float | `2.5` | λ 정규화 기준값 |
+| `omega_mode` | `he_litterman` / `rmse` / `ff3_paper` | `he_litterman` | Ω 계산 방식 |
 | `tc` | float | `0.001` | 편도 거래비용 (10bp) |
 | `max_weight` | float | `0.10` | 단일 종목 상한 |
 | `lstm_pred_path` | str | 자동 탐색 | LSTM 예측 파일 경로 |
 
+> 📌 `omega_scale`은 deprecated (`scaled` 모드 제거됨). 옛 cfg에서 발견되면 무시.
+
 ---
 
-### `prior` 상세
+### 4-1. 단일 view BL — 전체 수식 (K=1)
 
-| 값 | π 가중 |
+본 프로젝트는 자산별 view(K=N) 대신 **그룹 spread 단일 view(K=1)** 형식을 사용. P, Q, Ω 모두 **스칼라 계산**으로 단순화.
+
+**입력**:
+- `Σ` (n×n): Ledoit-Wolf 공분산. 직전 60개월 일별 수익률 1260일에서 추정
+- `w_mkt` (n): prior 가중 벡터 (capm_mcap/eq/rp 중)
+- `λ` (스칼라): 위험회피계수, `clip(SPY_excess / σ²_mkt, 0.5, 10.0)` 또는 고정 2.5
+- `τ` (스칼라): prior 불확실성, **0.05 고정**
+
+**Prior π** (n-vector):
+```
+π = λ · Σ · w_mkt          ← CAPM 균형수익률 역산
+```
+
+**View 슬롯**: 다음 4-3, 4-4, 4-5에서 정의되는 `P` (n-vector), `Q` (스칼라), `Ω` (스칼라).
+
+**사후분포** (Sherman-Woodbury 닫힌해):
+```
+M     = (P τΣ Pᵀ) + Ω                  ← view 분산 합 (스칼라)
+diff  = Q − Pπ                          ← view 오차 (스칼라)
+μ_BL  = π + (τΣ Pᵀ) · (diff / M)       ← n-vector
+Σ_BL  = τΣ − (τΣ Pᵀ)(P τΣ) / M         ← n×n, rank-1 update
+```
+
+**MVO**:
+```
+maximize  μ_BL^T w − (λ/2) w^T Σ_BL w
+s.t.      Σw_i = 1, 0 ≤ w_i ≤ max_weight (기본 0.10)
+```
+
+---
+
+### 4-2. Prior π — 3종
+
+`prior` 슬롯이 `w_mkt`를 결정. π = λ Σ w_mkt 공식은 동일.
+
+| `prior` | `w_mkt` 정의 | 의미 |
+|---|---|---|
+| `capm_mcap` | `w_i = mcap_i / Σ mcap_j` | 시총가중 (He-Litterman 1999 표준) |
+| `capm_eq` | `w_i = 1/N` | 균등가중 (naïve baseline) |
+| `capm_rp` | `w_i = (1/σ_i) / Σ(1/σ_j)` | 역변동성 가중 (Risk Parity 사상) |
+
+> `capm_rp`의 σ는 **trailing 21일 실현변동성** 사용 (`vol_21d`). prior 단계라 LSTM 예측은 안 씀.
+
+---
+
+### 4-3. P 행렬 — 4종 가중 + 분류
+
+**공통 분류**: `p_mode`로 결정된 변동성 시리즈 σ를 오름차순 정렬 후
+- 하위 `pct=0.30` → **저위험 그룹** (long, P > 0)
+- 상위 `pct=0.30` → **고위험 그룹** (short, P < 0)
+
+**`p_mode`별 σ 정의**:
+| `p_mode` | σ 출처 |
 |---|---|
-| `capm_mcap` | 시총 비례 — 시장 균형 표준 (He-Litterman 1999) |
-| `capm_eq` | 균등 가중 — naïve 비교군 |
-| `capm_rp` | 1/σ 역변동성 — Risk Parity 사상 |
+| `trailing_vol21` | `vol_21d` (과거 21일 실현) |
+| `trailing_vol252` | `vol_252d` (과거 252일 실현) |
+| `lstm_predicted` | LSTM+HAR 앙상블 예측, `exp(y_pred_ensemble)` (Phase3 산출) |
 
-### `p_mode` 상세
+**`p_weight`별 가중 수식** (σ_i: 자산 i의 변동성, m_i: 시가총액):
 
-| 값 | 사용 변동성 | 설명 |
-|---|---|---|
-| `trailing_vol21` | `vol_21d` (과거 21일 실현) | look-ahead 없음, 단순 |
-| `trailing_vol252` | `vol_252d` (과거 252일) | 장기 안정 |
-| `lstm_predicted` | LSTM+HAR 앙상블 예측 | Phase3 산출 (`y_pred_ensemble` → exp() → σ) |
-
-### `p_weight` 상세 — Long(저변동) / Short(고변동)
-
-| 값 | Long (하위 30%) | Short (상위 30%) | 비고 |
+| `p_weight` | Long (저위험 그룹 i ∈ Low) | Short (고위험 그룹 i ∈ High) | 유니버스 |
 |---|---|---|---|
-| `mcap` | 시총 비례 | 시총 비례 | 표준 |
-| `eq` | 동일 | 동일 | 단순·견고 |
-| `rp` | 1/σ | 1/σ | Pyo & Lee 2018 |
-| `vol_mcap` | (1/σ)×mcap | σ×mcap | 전체 유니버스 (30% 컷 없음) |
+| `mcap` | `P_i = +m_i / Σ_{j∈Low} m_j` | `P_i = −m_i / Σ_{j∈High} m_j` | 30% 컷 |
+| `eq` | `P_i = +1 / n_g` | `P_i = −1 / n_g` (n_g = 그룹 크기) | 30% 컷 |
+| `rp` | `P_i = +(1/σ_i) / Σ_{j∈Low}(1/σ_j)` | `P_i = −σ_i / Σ_{j∈High} σ_j` | 30% 컷 |
+| `vol_mcap` | `P_i = +(1−r_i)·m_i / Σ` | `P_i = −r_i·m_i / Σ` (r_i = vol percentile rank) | **전체** (30% 컷 없음) |
 
-### `q_mode` 상세 — Q (단일 view 강도) 결정
-
-| 값 | Q 계산 | 비고 |
-|---|---|---|
-| `fixed` | `Q = q_value` | 가장 단순 |
-| `vol_spread` (vsp) | `Q = q_value × clip(vol_spread_t / spread_ref, 0.1, 3.0)` | 위기 시 확대(저변동 anomaly 강화) |
-| `lambda` | `Q = q_value × λ_t / λ_ref` | 시장 위험회피도에 비례 |
-| `raw_lam` | `Q = q_value × λ_t` | λ 직접 곱 |
-| `inv_lambda` | `Q = q_value × λ_ref / λ_t` | λ 역수(반대 방향) |
-| `none` | Q 없음 → BL 스킵, 직접 보유 | naive 비교군 |
-| `capm` | BL 없음 → CAPM π 직접 최적화 | capm_no_bl 비교군 |
-
-### `omega_mode` 상세 — Ω (view 분산) 결정
-
-| 값 | Ω 계산 | 비고 |
-|---|---|---|
-| `he_litterman` (he) | `Ω = τ·P·Σ·Pᵀ` (스칼라) | He-Litterman 1999 표준 |
-| `scaled` | `he × omega_scale` | scale<1 view 신뢰↑ / >1 신뢰↓ |
-| `rmse` (rms) | LSTM 예측 RMSE 기반 스케일링 | RMSE↑ → Ω↑ |
-| `ff3_paper` (pap) | `Ω_t = (Q_{t-1} − actual_P_return_{t-1})²` | 직전월 예측오차² Bayesian rolling |
-
-> ⚠️ `ff3_paper` 명명 주의: `compute_omega_paper`(FF3 회귀 잔차분산)는 dispatcher에서 호출 안 됨. 실제 로직은 walk_forward 안의 적응형 갱신. FF3 논문 무관, 발표 시 "직전월 예측오차² 적응형"으로 정확히 표현.
+**P 합 = 0** (자기자금 조달 long-short, market-neutral 형식).
 
 ---
 
-## 5. 실험 카테고리 (총 214)
+### 4-4. Q (single view 기대 spread) — 5종 활성 + 2종 비활성
 
-### 5-1. 매트릭스 (LSTM 고정, 4-token mat_*)
+매 시점 t의 `λ_t = clip(SPY_excess_t / σ²_mkt,t, 0.5, 10.0)` (compute_pi에서 계산).
+`q_base = q_value` (기본 0.003), `lam_mean = 2.5`.
+
+| `q_mode` | Q 수식 | 메커니즘 |
+|---|---|---|
+| `fixed` | `Q = q_value` | 가장 단순. q_value 고정 |
+| `vol_spread` (vsp) | `Q = q_base × clip(spread_t / spread_ref, 0.1, 3.0)`<br>`spread_t = mean(σ_pred[P<0]) − mean(σ_pred[P>0])`<br>`spread_ref = train 기간 expanding median` | LSTM 예측 vol 격차로 view 강도 동적 조절 (위기↑→Q↑) |
+| `lambda` | `Q = q_base × clip(λ_t / lam_mean, 0.1, 3.0)` | 시장 안정(λ↑) → Q 강화 |
+| `raw_lam` | `Q = max(0, q_base × lam_raw / lam_mean)`<br>`lam_raw = SPY_excess / σ²_mkt` (clip 전) | SPY 하락(lam_raw 음수) → Q=0 자연 게이팅 |
+| `inv_lambda` | `Q = q_base × clip(lam_mean / λ_t, 0.1, 3.0)` | 위기(λ↓) → Q 강화 (반대 방향) |
+| `none` | BL 스킵, 저변동 그룹 직접 보유 | naive_lowvol 비교군 |
+| `capm` | BL 없이 CAPM π로 직접 MVO | capm_no_bl 비교군 |
+
+> 📌 **`q_value`는 모든 동적 모드(vsp/lambda/raw_lam/inv_lambda)에서 base로 작용**. 단조 0.003 → 0.0070 sweep해도 절대값 분포만 평행이동(시그널은 동일).
+
+> ❌ **비활성**: `ff3_regression`, `realized_spread`, `regime`은 코드에 있지만 EXPERIMENTS에서 사용 안 함.
+
+---
+
+### 4-5. Ω (view 분산) — 3종
+
+**τ = 0.05 고정** (prior 불확실성 비율).
+
+| `omega_mode` | Ω 수식 | 메커니즘 |
+|---|---|---|
+| `he_litterman` (he) | `Ω = max(τ · P Σ Pᵀ, 1e-8)` | He-Litterman 1999 표준. view 분산 = prior 분산 비례 |
+| `rmse` (rms) | `Ω = he × (RMSE_t / RMSE_base)²`<br>`RMSE_t = median(\|y_pred_lstm − y_true\|)` 직전 12개월<br>`RMSE_base = 0.39` (전역 기준값) | LSTM 예측 정확도 적응. 정확도↓(RMSE↑)→Ω↑→view 신뢰↓ |
+| `ff3_paper` (pap) | `Ω_t = max((Q_{t−1} − actual_P_return_{t−1})², 1e-8)` (첫 달은 he fallback) | 직전월 view 예측오차² Bayesian rolling. **walk_forward inline 처리**, dispatcher 거치지 않음 |
+
+> ⚠️ **`ff3_paper` 명명 주의**: 코드의 `compute_omega_paper`(FF3 회귀 잔차분산)는 **dead code**. 실제 동작은 위 수식. 발표 시 "직전월 예측오차² 적응형 (Bayesian rolling)"으로 정확히 표기.
+
+> ❌ **제거됨 (2026-05-07)**: `omega_mode='scaled'` (omega_scale 배수). 신뢰성 부족 사유로 EXPERIMENTS와 dispatcher에서 제외.
+
+---
+
+### 4-6. TC (Transaction Cost) + Metrics
+
+**TC 적용** (walk_forward 안):
+```
+gross_ret_t = w_t · actual_ret_t
+turnover_t  = (1/2) · Σ |w_t,i − w_{t−1},i|
+net_ret_t   = gross_ret_t − turnover_t × tc       ← TC 차감 후
+```
+`ret` 시리즈(pkl 안)는 **net_ret_t**. mt/rt의 모든 sharpe·sortino·cagr·alpha는 TC 차감 후 값.
+
+**핵심 메트릭** ([compute_metrics](bl_functions.py#L547)):
+```
+excess_t  = ret_t − rf_t
+mkt_exc_t = mkt_t − rf_t                       ← mkt = pkl의 spy_ret (forward-aligned)
+
+Sharpe   = mean(excess) / std(excess) × √12
+Sortino  = mean(excess) × 12 / (std(excess[excess<0]) × √12)
+CAGR     = (cum.iloc[-1])^(12/n) − 1            ← 기하평균 (복리, 2026-05-07 수정)
+Vol      = std(ret) × √12
+MDD      = min((cum − cum_max)/cum_max)
+β        = Cov(excess, mkt_exc) / Var(mkt_exc)
+α        = (mean(excess) − β·mean(mkt_exc)) × 12   ← Jensen, 단순 ×12 연환산
+```
+
+> ⚠️ **β/α 정합성 (2026-05-07 수정)**: `panel['spy_ret']`은 backward return(과거)이라 forward portfolio와 1-month 시차 발생. `build_master_table`이 각 pkl의 `spy_ret`(walk_forward 저장본, forward-aligned)을 우선 사용하도록 수정. capm_no_bl β ≈ 1.0이 sanity check 통과 기준.
+
+---
+
+## 5. 실험 카테고리 (총 156, 2026-05-07 기준)
+
+### 5-1. 매트릭스 (LSTM 고정, 4-token mat_*) — 135개
 
 ```
 mat_{prior}_{p_weight}_{q}_{omega}
@@ -150,29 +251,45 @@ mat_{prior}_{p_weight}_{q}_{omega}
 | q_mode | fix / lam / raw / inv / vsp |
 | omega | he / pap / rms |
 
-3 × 3 × 5 × 3 = **135 cells** (현재 일부만 실현, 약 108)
+3 × 3 × 5 × 3 = **135 cells** (모두 실현)
 
-### 5-2. 비교군 / 변형군 (semantic naming)
+### 5-2. 비매트릭스 (semantic naming) — 21개
 
-| 카테고리 | 예시 |
-|---|---|
-| BL 없음 | `capm_no_bl`, `naive_lowvol`, `naive_lowvol_rp` |
-| Trailing 21일 | `baseline`, `omega_rmse`, `omega_paper`, `q_lambda`, `q_raw_lam` |
-| Scaled Ω | `omega_scaled_double`, `omega_scaled_half_p_lstm`, `omega_scaled_double_p_lstm` |
-| vol_mcap | `p_vol_mcap`, `p_lstm_vol_mcap`, `prior_eq_p_vol_mcap` |
+| 카테고리 | 이름 | 개수 |
+|---|---|---:|
+| BASELINE | `baseline` | 1 |
+| BL 미사용 비교군 | `capm_no_bl`, `naive_lowvol` | 2 |
+| Trailing 단일 슬롯 변형 | `prior_eq`, `prior_rp`, `p_eq`, `p_rp`, `p_vol_mcap` | 5 |
+| Trailing × Q 동적 | `q_lambda`, `q_inv_lambda`, `q_raw_lam` | 3 |
+| Trailing × prior_eq + Q | `prior_eq_q_lambda`, `prior_eq_q_raw_lam` | 2 |
+| Trailing × Ω 변형 | `omega_paper`, `omega_rmse`, `q_ff3_paper`, `q_ff3_paper_omega_paper` | 4 |
+| LSTM × vol_mcap | `p_lstm_vol_mcap` | 1 |
+| Q 민감도 baseline | `baseline_q55`, `baseline_q64`, `baseline_q70` | 3 |
 
-### 5-3. Q 민감도 (2026-05-06 추가, 39개)
+> ❌ **제거됨 (2026-05-07)**:
+> - Scaled Ω 변형 10개 (`omega_scaled_*`) — `omega_mode='scaled'` 폐기, 신뢰성 부족
+> - vol_mcap sparse 변형 12개 (`p_vol_mcap_q_lambda`, `prior_eq_p_vol_mcap*`, `*_p_lstm` 등) — 체계적 매트릭스(3×4×5×3) 없이 sparse라 비교 효용 약함. `p_vol_mcap`(trailing) + `p_lstm_vol_mcap`(LSTM) 2개만 보존
+> - Q 민감도 다중 후보 33개 — canonical 충돌로 K2 대시보드 혼란
 
-5-레짐 sortino_ir Top 20 중 q_mode ∈ {fixed, vol_spread} 후보 13개 × q_value ∈ {0.0055, 0.0064, 0.0070}.
+### 5-3. Q 민감도 — baseline 단일 후보 (2026-05-07)
 
-이름 규칙: `{원본_이름}_q55` / `_q64` / `_q70`.
+기존 11 후보 × 4 q_value 다중 민감도 분석은 canonical 충돌(같은 이름 중복)로 K2 대시보드 혼란 야기 → **제거**.
 
-학술 근거 (Frazzini-Pedersen 2014, BAB):
+대신 **baseline 단일 후보**에 q_value sweep:
+- `baseline` (q=0.003, BASELINE 자체) — 기존
+- `baseline_q55` (q=0.0055)
+- `baseline_q64` (q=0.0064)
+- `baseline_q70` (q=0.0070)
+
+학술 근거 (Frazzini-Pedersen 2014, BAB 월평균):
 - 0.0055: 4팩터 알파 보수치
 - 0.0064: 글로벌 19개국 평균
 - 0.0070: 미국 평균
 
-목적: q_value 단조 증가 시 IR 일관 패턴 검증. 일관되면 Q 상향이 robust, 그렇지 않으면 0.003 유지 + 학술 mention만.
+**결과 요약** (K7 셀):
+- Sharpe / CAGR / sortino_ir / sharpe_ir 모두 **단조 감소** (q ↑ → 성과 ↓)
+- Sortino만 q=0.0055에서 미세 개선 (1.741 vs 1.726)
+- → **q=0.003이 우리 setup에 calibrate된 robust optimum**. BAB 학술 평균으로 올릴 동인 약함.
 
 ---
 
@@ -235,6 +352,6 @@ rm final/results/{name}.pkl
 
 ## 10. 분석 흐름 (다음 단계)
 
-`99_run` 완료 → `99_analyze` 실행 → 슬롯 효과 + 매트릭스 히트맵 + 5-레짐 안정성 → 위험성향별 최종 후보.
+`99_run` 완료 → `99_analyze` 실행 → 슬롯 효과 + 매트릭스 히트맵 + 3-레짐 안정성 → 위험성향별 최종 후보.
 
-상세: [99_ANALYZE_GUIDE.md](99_ANALYZE_GUIDE.md).
+상세: `99_analyze.ipynb` 안 markdown 셀 참고.
