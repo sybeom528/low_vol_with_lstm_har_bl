@@ -145,7 +145,41 @@ for name, (cfg, d) in loaded.items():
     records.append(rec)
 
 df = pd.DataFrame(records)
+
+# ── SPY 행 + full 통계 (비교 baseline) ───────────────────────
+spy_row = {'name': 'SPY', 'prior': '-', 'p_mode': '-', 'p_weight': '-',
+           'q_mode': '-', 'omega_mode': '-', 'omega_scale': '-'}
+for label, s, e, _ in REGIMES:
+    m = metrics(spy.loc[s:e])
+    for k in ['sharpe','sortino','mdd','mean','vol']:
+        spy_row[f'{label}_{k}'] = m[k]
+m_full_spy = metrics(spy)
+for k in ['sharpe','sortino','mdd','mean','vol']:
+    spy_row[f'full_{k}'] = m_full_spy[k]
+
+# SPY를 맨 위 행으로
+df = pd.concat([pd.DataFrame([spy_row]), df], ignore_index=True)
 df.to_csv(OUTDIR / 'all_metrics.csv', index=False)
+
+# ── 비교 친화적 CSV (실험 vs SPY 차이) ────────────────────────
+diff_rows = []
+for _, r in df[df['name'] != 'SPY'].iterrows():
+    rec = {'name': r['name'], 'prior': r['prior'],
+           'p_mode': r['p_mode'], 'p_weight': r['p_weight'],
+           'q_mode': r['q_mode'], 'omega_mode': r['omega_mode']}
+    for label, _, _, _ in REGIMES:
+        for k in ['sortino','mdd','sharpe']:
+            exp_v = r[f'{label}_{k}']
+            spy_v = spy_row[f'{label}_{k}']
+            rec[f'{label}_{k}'] = round(exp_v, 3)
+            rec[f'{label}_{k}_vs_SPY'] = round(exp_v - spy_v, 3)
+    for k in ['sortino','mdd','sharpe']:
+        exp_v = r[f'full_{k}']; spy_v = spy_row[f'full_{k}']
+        rec[f'full_{k}'] = round(exp_v, 3)
+        rec[f'full_{k}_vs_SPY'] = round(exp_v - spy_v, 3)
+    diff_rows.append(rec)
+pd.DataFrame(diff_rows).to_csv(OUTDIR / 'all_metrics_vs_spy.csv', index=False)
+print(f'[C] all_metrics.csv (SPY 포함) + all_metrics_vs_spy.csv 저장')
 
 # ── (D) SPY 필터 — 단계별 (strict / sortino+mdd / sortino만) ────
 spy_lookup = {row['regime']: row for row in spy_stats}

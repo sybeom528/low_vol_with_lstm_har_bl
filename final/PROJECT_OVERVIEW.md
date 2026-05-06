@@ -1,153 +1,181 @@
-# Low-Risk Black-Litterman 실험 프로젝트
+# 성향별 액티브 ETF 펀드 — Low-Risk BL 프로젝트 개요
+
+> **최종 갱신: 2026-05-06** (LSTM 변동성 피봇 + Q 민감도 실험 반영)
 
 ---
 
 ## 1. 핵심 목표
 
-> **저변동성 종목군에 대해 Black-Litterman 모델을 적용하고,**  
-> **Prior / P 행렬 / Q / 비교군 등 슬롯별 실험으로 최적 구성을 찾는다.**
+> **저변동성 anomaly 가설을 LSTM σ 예측 + Black-Litterman 단일 view로 정형화하고,**
+> **위험성향(공격/균형/안정)별 ETF 펀드 후보를 175+ 슬롯 조합으로 탐색.**
 
 ---
 
-## 2. Black-Litterman 구조 요약
+## 2. 단일 View Black-Litterman 구조 (K=1)
 
 ```
-π (CAPM 균형 수익률, Prior)
+π = λΣw_mkt          (Prior: CAPM 균형 — mcap/eq/rp 가중)
 +
-Q (투자자 뷰 = P 포트폴리오의 기대 초과수익률)
-Ω (뷰 불확실성)
-─────────────────────────────────────────────
-→ μ_BL (사후 기대 수익률) → 포트폴리오 최적화
+P (1×N)              (저변동 30% long, 고변동 30% short — vol_pred 기준)
+Q (스칼라)            (그룹 spread view 강도)
+Ω (스칼라)            (view 분산)
+─────────────────────────────────────────────────────────────
+사후 (Sherman-Woodbury):
+μ_BL = π + (τΣPᵀ)·(Q − Pπ) / (PτΣPᵀ + Ω)
+↓
+MVO 최적화 (max_weight 0.10, 자기자금 sum=1)
 ```
 
-**P 포트폴리오**: `vol_21d` 하위 30% Long / 상위 30% Short (자기자금 조달, sum=0)  
-**Prior (π)**: CAPM 균형수익률 — 시총가중(`capm_mcap`) 또는 균등가중(`capm_eq`)  
-**Q**: 현재 고정값 0.003 (월 0.3%) → 향후 HMM 기반 동적 Q로 개선 예정
+**왜 단일 spread view?** "고변동 종목은 risk-adjusted return으로 저변동을 못 따라간다"는 가설을 자산별 view로 표현하기 부자연스럽고 noisy(자산별 Q 예측 R² −0.95 실패 사례). 그룹 간 spread 1개 view가 직관·강건·해석 모두 우수.
 
 ---
 
-## 3. 파일 구조
+## 3. 7-Step 파이프라인 (현 진행도)
+
+```
+Step 1: Data Collection         ✅ portfolio_prices, FRED, yfinance
+Step 2: Preprocessing & EDA     ✅ monthly_panel, daily_returns
+Step 3: LSTM σ 예측              ✅ ensemble_predictions_stockwise.csv
+                                 (피봇: Q 직접 예측 → 변동성 예측, 2026-05-06)
+Step 4: Black-Litterman (1-view) ✅ μ_BL, Σ_BL — 175 슬롯 조합
+Step 5: MVO by Risk Profile      🟡 99_analyze에서 후보 선정 진행
+Step 6: Backtesting (5-레짐)     ✅ 175 슬롯 + 39 Q 민감도 = 214 실험
+Step 7: Streamlit Dashboard      ❌ 미착수
+```
+
+---
+
+## 4. 파일 구조
 
 ```
 final/
-├── bl_config.py          ← 실험 정의 (실험 추가는 여기서만)
-├── bl_functions.py       ← BL 계산 핵심 함수
-├── 99_run.ipynb          ← 실험 실행 + pkl 저장
-├── 99_analyze.ipynb      ← 결과 분석 / 차트
+├── bl_config.py              ← EXPERIMENTS 정의 (현 214개)
+├── bl_functions.py           ← BL 핵심 함수 (Σ/π/P/Q/Ω/BL/TC/Metrics)
+├── master_table.py           ← results/*.pkl → mt/rt DataFrame 빌더
+├── analyze_plots.py          ← 시각화 (대시보드, 매트릭스, 비교 차트)
 │
-├── results/              ← 실험 결과 pkl (99_run 출력)
-│   ├── baseline.pkl
-│   ├── prior_eq.pkl
-│   └── ...
+├── 99_run.ipynb              ← walk_forward 실행 → results/*.pkl
+├── 99_analyze.ipynb          ← 24-cell 분석 (J1~J6, K1~K6, K2-H)
 │
-├── data/                 ← monthly_panel.csv 등 입력 데이터
-├── outputs/99_compare/   ← 차트 PNG 자동 저장
+├── results/                  ← 214 pkl (config + ret + comp + meta)
+├── data/                     ← monthly_panel.csv, daily_returns.pkl, ff3_monthly.csv
+├── phase3(data_outputs)/     ← LSTM 예측 산출물
+│   └── data/ensemble_predictions_stockwise.csv
+├── outputs/99_analyze/       ← 차트 PNG
 │
-├── _dev/                 ← 보관용 (실험 초안 등)
-│   └── 99_baseline.ipynb
-│
-└── PROJECT_OVERVIEW.md   ← 이 파일
+├── PROJECT_OVERVIEW.md       ← 본 문서
+├── BL_EXPERIMENT_GUIDE.md    ← 실험 정의/추가 가이드
+├── 99_ANALYZE_GUIDE.md       ← 분석 노트북 셀별 해설
+├── DATA_COLLECTION.md        ← 데이터 수집 파이프라인
+├── ANOMALY_ANALYSIS.md       ← 저변동 anomaly EDA (02_LowRiskAnomaly)
+└── Exploiting_LowRisk_Anomaly_BL_Summary.md   ← Pyo & Lee 2018 논문 정리
 ```
 
 ---
 
-## 4. 실험 슬롯 구조
-
-`bl_config.py`의 `BASELINE` 기준값에서 하나씩 바꾸는 OFAT 방식.
+## 5. 슬롯 정의 (BL 변형 선택지)
 
 | 슬롯 | 선택지 | 설명 |
-|------|--------|------|
-| `prior` | `capm_mcap` / `capm_eq` | CAPM 균형수익률 가중방식 |
-| `p_mode` | `trailing_vol21` / `trailing_vol252` / `lstm_predicted` | P 행렬 신호 기준 변동성 |
-| `p_weight` | `mcap` / `eq` / `rp` / `vol_mcap` | P 행렬 가중방식 |
-| `q_mode` | `fixed` / `capm` / `none` / `regime_bayesian`(예정) | Q 결정 방식 |
-| `q_value` | float | `q_mode='fixed'`일 때 Q 값 |
-| `omega_mode` | `he_litterman` / `scaled` / `rmse` | Ω 계산 방식 |
-| `tc` | float | 편도 거래비용 (기본 0.001 = 10bp) |
-| `max_weight` | float | 단일 종목 상한 (기본 0.10) |
+|---|---|---|
+| `prior` | `capm_mcap` / `capm_eq` / `capm_rp` | Prior π 가중 방식 |
+| `p_mode` | `trailing_vol21` / `trailing_vol252` / `lstm_predicted` | P 분류 기준 변동성 |
+| `p_weight` | `mcap` / `eq` / `rp` / `vol_mcap` | P 행렬 가중 |
+| `q_mode` | `fixed` / `vol_spread` / `lambda` / `raw_lam` / `inv_lambda` / `none` / `capm` | Q 결정 방식 |
+| `q_value` | float (기본 0.003) | fixed/vsp의 Q 값 또는 base |
+| `omega_mode` | `he_litterman` / `scaled` / `rmse` / `ff3_paper` | Ω 계산 방식 |
+| `omega_scale` | float (기본 1.0) | scaled에서 배수 |
+| `tc` | float (기본 0.001 = 10bp) | 편도 거래비용 |
+| `max_weight` | float (기본 0.10) | 단일 종목 상한 |
+
+상세 슬롯 설명: [BL_EXPERIMENT_GUIDE.md](BL_EXPERIMENT_GUIDE.md)
 
 ---
 
-## 5. 현재 실험 목록 (13개)
+## 6. 명명 체계 (5-token canonical)
 
-| 실험명 | 변경 슬롯 | 설명 |
-|--------|----------|------|
-| `baseline` | — | 기준선 |
-| `prior_eq` | prior | 1/N 균등가중 Prior |
-| `p_vol252` | p_mode | 252일 장기 변동성 신호 |
-| `p_rp` | p_weight | 역변동성 가중 (전체 유니버스) |
-| `p_eq` | p_weight | 동일가중 |
-| `p_vol_mcap` | p_weight | vol×mcap 가중 (전체 유니버스) |
-| `prior_eq_p_vol252` | prior + p_mode | 1/N Prior + 252일 vol |
-| `prior_eq_p_rp` | prior + p_weight | 1/N Prior + 역변동성 |
-| `prior_eq_p_eq` | prior + p_weight | 1/N Prior + 동일가중 |
-| `prior_eq_p_vol_mcap` | prior + p_weight | 1/N Prior + vol×mcap |
-| `capm_no_bl` | q_mode | BL 없음 — CAPM π 직접 최적화 (전체 유니버스) |
-| `naive_lowvol` | q_mode | BL 없음 — 저변동 시총가중 직접 보유 |
-| `naive_lowvol_rp` | q_mode + p_weight | BL 없음 — 저변동 역변동성 가중 |
+| 컬럼 | 형식 | 예시 |
+|---|---|---|
+| `name` | 디스크 파일명 (mat_안: 4-token / 밖: semantic) | `mat_mcap_eq_raw_pap` / `baseline` |
+| `canonical` | 분석용 5-token: `{prior}_{p_mode}_{p_weight}_{q}_{omega}` | `mcap_ls_eq_raw_pap` |
+
+| 토큰 | 가능 값 |
+|---|---|
+| prior | `mcap` / `eq` / `rp` |
+| p_mode | `tr` (trailing) / `ls` (LSTM) |
+| p_weight | `mcap` / `eq` / `rp` / `volm` |
+| q | `fix` / `lam` / `raw` / `inv` / `vsp` / `none` / `capm` |
+| omega | `he` / `pap` / `rms` / `sh` (scaled_half) / `sd` (scaled_double) |
 
 ---
 
-## 6. 실험 추가 방법
-
-### 파라미터만 바꾸는 경우 → `bl_config.py` 한 줄 추가
-
-```python
-# 예: max_weight 15%로 올리는 실험
-{**BASELINE, 'name': 'max15', 'max_weight': 0.15},
-```
-
-이후 `99_run.ipynb` 실행하면 자동으로 `results/max15.pkl` 생성.
-
-### 새 계산 방식 추가 시 → 3개 파일 수정 필요
-
-1. `bl_config.py` — 슬롯 주석 + 실험 dict 추가
-2. `bl_functions.py` — 해당 슬롯 처리 함수 추가
-3. `99_run.ipynb` — dispatcher에 분기 추가 (cell-04 참고)
-
----
-
-## 7. 성과 요약 (2004~2025, Sharpe 기준)
-
-| 실험 | Sharpe | CAGR | MDD |
-|------|--------|------|-----|
-| baseline | 1.106 | 13.4% | -13.0% |
-| prior_eq | 1.105 | 14.2% | -13.9% |
-| p_vol252 | 1.073 | 13.1% | -13.1% |
-| naive_lowvol | 1.061 | 13.9% | -14.7% |
-| ... | | | |
-| SPY | 0.908 | 14.4% | -23.9% |
-| capm_no_bl | 0.899 | 14.8% | -22.2% |
-
-→ **baseline이 Sharpe 1위.** P 행렬 / Prior 변경의 효과는 제한적.  
-→ **핵심 개선 여지: Q의 동적 조정** (현재 고정값 = 가장 약한 고리)
-
----
-
-## 8. 다음 단계 — HMM 기반 동적 Q
-
-**계획**: 김하연 HMM 레짐 모델 + LSTM 변동성 예측을 결합해 Q를 동적으로 결정.
+## 7. 5-레짐 안정성 평가
 
 ```
-HMM posterior P(레짐_t | obs) × 전이행렬
-        ↓
-P(레짐_{t+1}) prior
-        ↓ Bayesian update
-LSTM 예측 vol → emission likelihood
-        ↓
-posterior × Q_per_regime → Q_t (동적)
+R1_회복   2010-01 ~ 2014-12   Post-GFC + 유럽위기
+R2_확장   2015-01 ~ 2018-12   미국 회복 + 다중충격
+R3_COVID  2019-01 ~ 2020-12   코로나 크래시 + 재개
+R4_베어   2021-01 ~ 2022-12   인플레 + 22년 베어
+R5_AI랠리 2023-01 ~ 2024-12   Mag7 강세
 ```
 
-상세 구현 계획: [`hmm_bayesian_q_실험계획.md`](hmm_bayesian_q_실험계획.md) 참고
+각 후보의 레짐별 Sortino/Sharpe/MDD → 안정성 지표(`sortino_ir`, `sharpe_ir`, `sortino_min`, `mdd_worst`)로 종합. 자세한 해석: [99_ANALYZE_GUIDE.md](99_ANALYZE_GUIDE.md).
+
+---
+
+## 8. 175+ 실험 매트릭스 + Q 민감도
+
+**핵심 매트릭스 (LSTM 고정, 108 cells)**:
+- prior(3) × p_weight(3) × q_mode(4: fix·lam·raw·inv) × omega(3: he·pap·rms) = 108
+- + vol_spread q_mode 매트릭스 27 cells
+- + trailing/scaled/he_double 등 비교군 약 40 cells
+- = 175 base experiments
+
+**Q 민감도 추가 (2026-05-06, 39 experiments)**:
+- 5-레짐 sortino_ir Top 20 중 q_mode ∈ {fixed, vol_spread} 후보 13개
+- × q_value ∈ {0.0055, 0.0064, 0.0070} (0.003 기존 baseline 재사용)
+- 학술 근거: BAB(Frazzini & Pedersen 2014) US 0.0070 / global 0.0064 / 보수치 0.0055
+
+총 EXPERIMENTS = 214
 
 ---
 
 ## 9. Look-ahead Bias 체크리스트
 
 | 변수 | 사용 시점 | 상태 |
-|------|----------|------|
-| `vol_21d` | pred_date 이전 21일 | ✅ 안전 |
+|---|---|---|
+| `vol_21d`, `vol_252d` | pred_date 이전 N일 | ✅ 안전 |
 | `log_mcap` | pred_date 시점 | ✅ 안전 |
-| `fwd_ret_1m` | 평가(성과 계산)에만 사용 | ✅ 안전 |
-| LSTM 예측 | walk-forward 생성 | ✅ 안전 |
-| HMM 파라미터 | In-sample 학습 (한계) | ⚠️ 명시 필요 |
+| `fwd_ret_1m` | 평가(net_ret 계산)에만 사용 | ✅ 안전 |
+| LSTM 예측 (`y_pred_ensemble`) | walk-forward 사전 생성 | ⚠️ 학습 분할 검증 필요 |
+| Σ (LW 공분산) | 직전 60개월 일별 1260일 | ✅ 안전 |
+| Q (`vol_spread`/`lambda`/`raw_lam`/`inv_lambda`) | 직전 월 vol_pred / λ | ✅ 안전 |
+| Ω (`ff3_paper`) | 직전 월 예측오차² | ✅ 안전 (Bayesian rolling) |
+
+> ⚠️ **omega_mode='ff3_paper' 명명 주의**: `compute_omega_paper`(FF3 회귀)는 dispatcher에서 호출되지 않음. 실제 로직은 walk_forward 안의 `Ω_t = (Q_{t-1} − actual_P_return_{t-1})²` (직전월 예측오차² 기반 적응형). FF3 논문과 무관하므로 발표 시 "직전월 예측오차² 적응형"으로 정확히 표현 권장.
+
+---
+
+## 10. 다음 단계
+
+1. **Q 민감도 결과 분석** (39 백테스트 완료 후)
+   - q_value별 IR 단조성 검증
+   - BAB 학술 평균(0.0064/0.0070)이 0.003보다 robust한가?
+
+2. **위험성향별 최종 후보 매핑** (K6)
+   - 공격형: sortino_mean 최고
+   - 균형형: stability_score 최고
+   - 안정형: sortino_min > 0 + mdd_worst 얕음
+
+3. **Step 7: Streamlit 대시보드** — 리밸런싱 추천 UI
+
+---
+
+## 11. 참고 문서
+
+- [BL_EXPERIMENT_GUIDE.md](BL_EXPERIMENT_GUIDE.md) — 슬롯 정의 + 실험 추가 방법
+- [99_ANALYZE_GUIDE.md](99_ANALYZE_GUIDE.md) — 분석 노트북 셀별 해설
+- [DATA_COLLECTION.md](DATA_COLLECTION.md) — 01_DataCollection 파이프라인
+- [ANOMALY_ANALYSIS.md](ANOMALY_ANALYSIS.md) — 저변동 anomaly EDA
+- [Exploiting_LowRisk_Anomaly_BL_Summary.md](Exploiting_LowRisk_Anomaly_BL_Summary.md) — Pyo & Lee 2018 정리
+- [../서윤범/project_design_v3.md](../서윤범/project_design_v3.md) — 전체 아키텍처 (피봇 전 기준이라 일부 outdated)
+- [../김윤서/전체_프로젝트_프로세스.md](../김윤서/전체_프로젝트_프로세스.md) — End-to-end 프로세스

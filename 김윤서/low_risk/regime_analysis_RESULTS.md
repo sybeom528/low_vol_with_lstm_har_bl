@@ -58,9 +58,9 @@
 | prior_eq_q_lambda | capm_eq | 2.043 | -14.3% | 1.178 | R5 AI 랠리 |
 | p_vol_mcap | capm_mcap | 2.016 | -13.9% | 1.149 | R5 AI 랠리 |
 | omega_rmse | capm_mcap | 1.950 | -13.0% | 1.223 | R5 AI 랠리 |
-| prior_eq_p_lstm_eq_q_raw_lam | capm_eq | 1.931 | -15.2% | 1.069 | R5 AI 랠리 |
-| prior_rp_p_lstm_rp_q_lambda | capm_rp | 1.810 | -17.8% | 1.058 | R5 AI 랠리 |
-| prior_rp_p_lstm_rp | capm_rp | 1.551 | -17.5% | 1.035 | R5 AI 랠리 |
+| mat_eq_eq_raw_he | capm_eq | 1.931 | -15.2% | 1.069 | R5 AI 랠리 |
+| mat_rp_rp_lam_he | capm_rp | 1.810 | -17.8% | 1.058 | R5 AI 랠리 |
+| mat_rp_rp_fix_he | capm_rp | 1.551 | -17.5% | 1.035 | R5 AI 랠리 |
 
 ### 관찰
 1. **모두 R5에서 실패** — AI 랠리 SPY Sortino 4.63은 어떤 BL 조합도 못 넘김
@@ -86,9 +86,9 @@
 - mcap prior 대비 평균 0.05 약간 낮음
 
 ### prior=rp [03_heatmap_prior_rp.png](outputs/regime/03_heatmap_prior_rp.png)
-- top 1: **prior_rp_p_lstm_rp_q_lambda** (full 1.81)
-- top 2: prior_rp_p_lstm_rp (1.55)
-- top 3: prior_rp_p_lstm_mcap_q_raw_lam (~1.42)
+- top 1: **mat_rp_rp_lam_he** (full 1.81)
+- top 2: mat_rp_rp_fix_he (1.55)
+- top 3: mat_rp_mcap_raw_he (~1.42)
 - ⚠ 11개 신규 실험 백그라운드 실행 중 (완료 후 더 채워짐)
 
 ---
@@ -117,13 +117,13 @@
 - MDD -12.7% (그룹 내 최저 수준)
 
 ### LSTM 활용 default (메인 운용)
-**`prior_eq_q_raw_lam_p_lstm_omega_rmse`**
+**`mat_eq_mcap_raw_rms`**
 - 다른 분석에서 풀 Sharpe 1.162 최강
 - Tier 4 매트릭스에는 안 들었지만 (LSTM 결합 시 R3 COVID에서 다른 옵션이 더 강함)
 - 안정성과 LSTM 통합 균형
 
 ### 보수형 상품 (rp prior)
-**`prior_rp_p_lstm_rp_q_lambda`**
+**`mat_rp_rp_lam_he`**
 - full Sortino 1.81
 - MDD -17.8% (다른 후보보다 약간 큼)
 - 1/σ × 1/σ 이중 보수적 구조

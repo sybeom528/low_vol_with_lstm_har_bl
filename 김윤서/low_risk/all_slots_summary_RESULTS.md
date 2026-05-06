@@ -259,7 +259,7 @@ p_weight= mcap
 q_mode  = raw_lam
 omega   = rmse
 ```
-**→ Sharpe 1.162, 모든 서브기간 0.93+** (`prior_eq_q_raw_lam_p_lstm_omega_rmse`)
+**→ Sharpe 1.162, 모든 서브기간 0.93+** (`mat_eq_mcap_raw_rms`)
 
 ### 보수형 상품 (대안)
 ```

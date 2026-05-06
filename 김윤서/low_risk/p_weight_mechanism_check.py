@@ -94,8 +94,8 @@ piv_short.to_csv(OUTDIR/'mega_short_subperiod.csv')
 
 # ── D. 위기 drawdown 분석 ──────────────────────────────────────────────
 EXP = {
-    'q_lambda': {'mcap':'prior_eq_q_lambda_p_lstm','eq':'prior_eq_p_lstm_eq_q_lambda',
-                 'rp':'prior_eq_p_lstm_rp_q_lambda','vol_mcap':'prior_eq_p_vol_mcap_q_lambda_p_lstm'},
+    'q_lambda': {'mcap':'mat_eq_mcap_lam_he','eq':'mat_eq_eq_lam_he',
+                 'rp':'mat_eq_rp_lam_he','vol_mcap':'prior_eq_p_vol_mcap_mat_mcap_mcap_lam_he'},
 }
 CRISIS = [('COVID', '2020-02', '2020-04'),
           ('2022 약세장', '2022-01', '2022-10'),

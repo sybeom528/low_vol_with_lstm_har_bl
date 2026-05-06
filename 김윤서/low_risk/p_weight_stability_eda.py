@@ -2,7 +2,7 @@
 P 가중치(mcap / eq / rp / vol_mcap) 안정성 EDA
 
 목적
-  prior_eq_q_lambda_p_lstm / prior_eq_q_raw_lam_p_lstm 처럼
+  mat_eq_mcap_lam_he / mat_eq_mcap_raw_he 처럼
   p_weight='mcap' 조합이 서브기간별 Sharpe 편차가 가장 작고 평탄한 이유를
   P-벡터 단계 진단(집중도/회전율/극단노출) + 포트폴리오 단계 결과(서브 Sharpe)로 설명.
 
@@ -203,15 +203,15 @@ print('[1] P-vector EDA 시각화 4종 저장')
 # ── 2. 포트폴리오 서브기간 Sharpe ─────────────────────────────────────────
 EXP_BY_QP = {
     'q_lambda': {
-        'mcap':     'prior_eq_q_lambda_p_lstm',
-        'eq':       'prior_eq_p_lstm_eq_q_lambda',
-        'rp':       'prior_eq_p_lstm_rp_q_lambda',
-        'vol_mcap': 'prior_eq_p_vol_mcap_q_lambda_p_lstm',
+        'mcap':     'mat_eq_mcap_lam_he',
+        'eq':       'mat_eq_eq_lam_he',
+        'rp':       'mat_eq_rp_lam_he',
+        'vol_mcap': 'prior_eq_p_vol_mcap_mat_mcap_mcap_lam_he',
     },
     'q_raw_lam': {
-        'mcap':     'prior_eq_q_raw_lam_p_lstm',
-        'eq':       'prior_eq_p_lstm_eq_q_raw_lam',
-        'rp':       'prior_eq_p_lstm_rp_q_raw_lam',
+        'mcap':     'mat_eq_mcap_raw_he',
+        'eq':       'mat_eq_eq_raw_he',
+        'rp':       'mat_eq_rp_raw_he',
         'vol_mcap': 'prior_eq_p_vol_mcap_q_raw_lam_p_lstm',
     },
 }
