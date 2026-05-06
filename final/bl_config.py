@@ -5,16 +5,15 @@ bl_config.py — Black-Litterman 실험 정의
   - 기존 방식의 파라미터만 바꿀 때 → EXPERIMENTS에 dict 한 줄 추가
   - 새 계산 방식 도입 시 → bl_functions.py에 함수 추가 + 여기에 dict + 99_run dispatcher에 분기
 
-슬롯 키 정리:
-  p_mode    : 'trailing_vol21' | 'lstm_predicted'
+슬롯 키 정리 (2026-05-07 갱신):
+  p_mode    : 'trailing_vol21' | 'trailing_vol252' | 'lstm_predicted'
   p_weight  : 'mcap' | 'eq' | 'rp' | 'vol_mcap'
-  q_mode    : 'fixed' | 'ff3_regression' | 'realized_spread' | 'regime' | 'lambda' | 'raw_lam' | 'none'
-  q_value   : float  (q_mode='fixed'|'lambda'|'raw_lam' 일 때 q_base로 사용, 기본 0.003)
-  lam_mean  : float  (q_mode='lambda'|'raw_lam' 일 때 기준 λ, 기본 2.5)
-  q_regime_table : dict (q_mode='regime' 일 때 사용)
-  omega_mode: 'he_litterman' | 'scaled'
-  omega_scale: float (omega_mode='scaled' 일 때 사용, 기본 1.0)
-  prior     : 'capm_mcap' | 'capm_eq'
+  q_mode    : 'fixed' | 'lambda' | 'raw_lam' | 'inv_lambda' | 'vol_spread' | 'ff3_paper' | 'none' | 'capm'
+  q_value   : float  (q_mode='fixed' 또는 동적 모드 base, 기본 0.003)
+  lam_mean  : float  (q_mode='lambda'|'raw_lam'|'inv_lambda' 일 때 기준 λ, 기본 2.5)
+  omega_mode: 'he_litterman' | 'rmse' | 'ff3_paper'
+              (scaled는 신뢰성 부족으로 제거됨, 2026-05-07)
+  prior     : 'capm_mcap' | 'capm_eq' | 'capm_rp'   # capm_rp = 1/σ 정규화 Risk Parity
   tc        : float  (거래비용, 편도 turnover 기준, 기본 0.001 = 10bp)
   max_weight: float  (단일 종목 상한, 기본 0.10)
   lstm_pred_path: str | None  (p_mode='lstm_predicted' 또는 omega_mode='rmse' 시 경로)
@@ -41,123 +40,216 @@ BASELINE = {
     'lstm_pred_path': str(_LSTM_PRED_DEFAULT),
 }
 
-# ── 실험 목록 ────────────────────────────────────────────────────────────────
+# ── 실험 목록 ──────────────────────────────────────────────────────────
+# 총 156개 = 비매트릭스 21 + 매트릭스 135 (LSTM 고정, prior 3 × pw 3 × q 5 × Ω 3)
 EXPERIMENTS = [
 
-    # ── 기준선 (CAPM 시총가중 Prior, P 시총가중, vol21) ───────────────────────
+    # ═══════════════════════════════════════════════════════════════
+    # [0] BASELINE (기준점)
+    # prior=capm_mcap, p_mode=trailing_vol21, p_weight=mcap,
+    # q_mode=fixed (q_value=0.003), omega=he_litterman
+    # ═══════════════════════════════════════════════════════════════
     BASELINE,
 
-    # ── [Prior] CAPM 시총가중 vs 1/N 균등가중 ────────────────────────────────
-    {**BASELINE, 'name': 'prior_eq',
-     'prior': 'capm_eq'},               # 1/N 균등가중 prior
+    # ═══════════════════════════════════════════════════════════════
+    # [1] BL 미사용 비교군 (Q 슬롯으로 BL 우회)
+    # ═══════════════════════════════════════════════════════════════
+    {**BASELINE, 'name': 'capm_no_bl', 'q_mode': 'capm'},
+    {**BASELINE, 'name': 'naive_lowvol', 'q_mode': 'none'},
 
-    # ── [P 슬롯] P 행렬 가중 방식 ───────────────────────────────────────────────
-    {**BASELINE, 'name': 'p_rp',
-     'p_weight': 'rp'},                 # 1/σ 역변동성 가중
+    # ═══════════════════════════════════════════════════════════════
+    # [2] Trailing 단일 슬롯 변형 (prior / p_weight)
+    # ═══════════════════════════════════════════════════════════════
+    {**BASELINE, 'name': 'prior_eq', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'prior_rp', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'p_eq', 'p_weight': 'eq'},
+    {**BASELINE, 'name': 'p_rp', 'p_weight': 'rp'},
+    {**BASELINE, 'name': 'p_vol_mcap', 'p_weight': 'vol_mcap'},
 
-    {**BASELINE, 'name': 'p_eq',
-     'p_weight': 'eq'},                 # 동일가중
+    # ═══════════════════════════════════════════════════════════════
+    # [3] Trailing × Q 동적 슬롯
+    # ═══════════════════════════════════════════════════════════════
+    {**BASELINE, 'name': 'q_lambda', 'q_mode': 'lambda', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'q_inv_lambda', 'q_mode': 'inv_lambda', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'q_raw_lam', 'q_mode': 'raw_lam', 'lam_mean': 2.5},
 
-    {**BASELINE, 'name': 'p_vol_mcap',
-     'p_weight': 'vol_mcap'},           # 롱 (1/σ)×mcap, 숏 σ×mcap
+    # ═══════════════════════════════════════════════════════════════
+    # [4] Trailing × prior_eq + Q 동적
+    # ═══════════════════════════════════════════════════════════════
+    {**BASELINE, 'name': 'prior_eq_q_lambda', 'q_mode': 'lambda', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'prior_eq_q_raw_lam', 'q_mode': 'raw_lam', 'prior': 'capm_eq', 'lam_mean': 2.5},
 
-    # ── [비교군] BL 없음 ──────────────────────────────────────────────────────
-    {**BASELINE, 'name': 'capm_no_bl',
-     'q_mode': 'capm'},                 # CAPM prior π 직접 최적화, 전체 유니버스, BL 없음
+    # ═══════════════════════════════════════════════════════════════
+    # [5] Trailing × Ω 변형 (ff3_paper / rmse)
+    # ═══════════════════════════════════════════════════════════════
+    {**BASELINE, 'name': 'omega_paper', 'omega_mode': 'ff3_paper'},
+    {**BASELINE, 'name': 'omega_rmse', 'omega_mode': 'rmse'},
+    {**BASELINE, 'name': 'q_ff3_paper', 'q_mode': 'ff3_paper'},
+    {**BASELINE, 'name': 'q_ff3_paper_omega_paper', 'q_mode': 'ff3_paper', 'omega_mode': 'ff3_paper'},
 
-    {**BASELINE, 'name': 'naive_lowvol',
-     'q_mode': 'none'},                 # 저변동 시총가중 직접 보유 (BL 생략)
+    # ═══════════════════════════════════════════════════════════════
+    # [6] LSTM × vol_mcap (vol_mcap은 매트릭스 외 4번째 p_weight)
+    # 참고: trailing × vol_mcap = p_vol_mcap (위 [2]에 포함)
+    # ═══════════════════════════════════════════════════════════════
+    {**BASELINE, 'name': 'p_lstm_vol_mcap', 'p_mode': 'lstm_predicted', 'p_weight': 'vol_mcap'},
 
-    # ── [LSTM] CAPM 시총가중 Prior × LSTM 예측 vol ───────────────────────────
-    {**BASELINE, 'name': 'p_lstm_mcap',
-     'p_mode': 'lstm_predicted'},
+    # ═══════════════════════════════════════════════════════════════
+    # [7] Q 민감도 — baseline 단일 후보 × q_value 4종 (BAB 학술 평균 sweep)
+    # ═══════════════════════════════════════════════════════════════
+    {**BASELINE, 'name': 'baseline_q55', 'q_value': 0.0055},
+    {**BASELINE, 'name': 'baseline_q64', 'q_value': 0.0064},
+    {**BASELINE, 'name': 'baseline_q70', 'q_value': 0.007},
 
-    {**BASELINE, 'name': 'p_lstm_eq',
-     'p_mode': 'lstm_predicted', 'p_weight': 'eq'},
-
-    {**BASELINE, 'name': 'p_lstm_rp',
-     'p_mode': 'lstm_predicted', 'p_weight': 'rp'},
-
-    {**BASELINE, 'name': 'p_lstm_vol_mcap',
-     'p_mode': 'lstm_predicted', 'p_weight': 'vol_mcap'},
-
-    # ── [LSTM] 1/N Prior × LSTM 예측 vol ─────────────────────────────────────
-    {**BASELINE, 'name': 'prior_eq_p_lstm_mcap',
-     'prior': 'capm_eq', 'p_mode': 'lstm_predicted'},
-
-    {**BASELINE, 'name': 'prior_eq_p_lstm_eq',
-     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'eq'},
-
-    {**BASELINE, 'name': 'prior_eq_p_lstm_rp',
-     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'rp'},
-
-    {**BASELINE, 'name': 'prior_eq_p_lstm_vol_mcap',
-     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'vol_mcap'},
-
-    # ── [Q_lambda] 시장 위험회피계수 λ 기반 Q 조절 ───────────────────────────
-    # Q = q_base × clip(λ / lam_mean, 0.1, 3.0)
-    # 시장 안정(λ↑) → Q 강화 / 시장 불안(λ↓) → Q 약화
-    {**BASELINE, 'name': 'q_lambda',
-     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
-
-    # Q_lambda × LSTM vol P 조합
-    {**BASELINE, 'name': 'q_lambda_p_lstm',
-     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5,
-     'p_mode': 'lstm_predicted'},
-
-    # ── [inv_lambda_Q] 역방향 λ: 위기일수록 Q 강화 ───────────────────────────
-    # λ 낮음(위기) → Q 높음, λ 높음(강세) → Q 낮음
-    {**BASELINE, 'name': 'q_inv_lambda',
-     'q_mode': 'inv_lambda', 'q_value': 0.003, 'lam_mean': 2.5},
-
-    # inv_lambda × LSTM vol P 조합
-    {**BASELINE, 'name': 'q_inv_lambda_p_lstm',
-     'q_mode': 'inv_lambda', 'q_value': 0.003, 'lam_mean': 2.5,
-     'p_mode': 'lstm_predicted'},
-
-    # ── [raw_lam_Q] raw λ 부호 기반 자연 게이팅 ─────────────────────────────
-    # SPY 하락 → lam_raw 음수 → Q=0 자연 도달 (하드스탑 없이)
-    {**BASELINE, 'name': 'q_raw_lam',
-     'q_mode': 'raw_lam', 'q_value': 0.003, 'lam_mean': 2.5},
-
-    # ── [최고성과 조합] prior_eq × lstm_rp × q_lambda ────────────────────────
-    {**BASELINE, 'name': 'prior_eq_p_lstm_rp_q_lambda',
-     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'rp',
-     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
-
-    # inv_lambda × LSTM P × prior_eq
-    {**BASELINE, 'name': 'prior_eq_q_inv_lambda_p_lstm',
-     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'mcap',
-     'q_mode': 'inv_lambda', 'q_value': 0.003, 'lam_mean': 2.5},
-
-    # lambda × LSTM P × prior_eq
-    {**BASELINE, 'name': 'prior_eq_q_lambda_p_lstm',
-     'prior': 'capm_eq', 'p_mode': 'lstm_predicted', 'p_weight': 'mcap',
-     'q_mode': 'lambda', 'q_value': 0.003, 'lam_mean': 2.5},
-
-    # ── [논문 FF3] Q = 직전월 실현팩터 (Ω = he_litterman) ────────────────────
-    {**BASELINE, 'name': 'q_ff3_paper',
-     'q_mode': 'ff3_paper'},
-
-    # ── [논문 완전 구현] Q = 직전월 실현팩터, Ω = 전월 예측오차² ─────────────
-    {**BASELINE, 'name': 'q_ff3_paper_omega_paper',
-     'q_mode': 'ff3_paper', 'omega_mode': 'ff3_paper'},
-
-    # ── [논문 Ω만] fixed Q + 논문 방식 Ω ──────────────────────────────────────
-    {**BASELINE, 'name': 'omega_paper',
-     'omega_mode': 'ff3_paper'},
-
-    # ── [논문 Ω + LSTM P] ──────────────────────────────────────────────────────
-    {**BASELINE, 'name': 'omega_paper_p_lstm',
-     'omega_mode': 'ff3_paper', 'p_mode': 'lstm_predicted'},
-
-    # ── [비교군] HRP — Hierarchical Risk Parity ──────────────────────────────
-    # q_mode='hrp' → walk_forward에서 BL 건너뛰고 HRP 가중치 직접 산출
-    {**BASELINE, 'name': 'hrp_trailing',
-     'q_mode': 'hrp'},                          # 과거 Ledoit-Wolf 공분산으로 HRP
-
-    {**BASELINE, 'name': 'hrp_lstm',
-     'q_mode': 'hrp', 'p_mode': 'lstm_predicted'},  # LSTM 예측 vol²로 대각 교체 후 HRP
+    # ═══════════════════════════════════════════════════════════════
+    # [8] 매트릭스 (LSTM 고정, mat_{prior}_{pw}_{q}_{Ω}, 총 135 cells)
+    # prior ∈ {mcap, eq, rp} × p_weight ∈ {mcap, eq, rp}
+    # × q_mode ∈ {fix, lam, raw, inv, vsp} × omega ∈ {he, pap, rms}
+    # 정렬: prior → p_weight → q_mode → omega 순
+    # ═══════════════════════════════════════════════════════════════
+    # ── prior=mcap × pw=mcap ────────────────────────────────
+    {**BASELINE, 'name': 'mat_mcap_mcap_fix_he', 'p_mode': 'lstm_predicted'},
+    {**BASELINE, 'name': 'mat_mcap_mcap_fix_pap', 'p_mode': 'lstm_predicted', 'omega_mode': 'ff3_paper'},
+    {**BASELINE, 'name': 'mat_mcap_mcap_fix_rms', 'p_mode': 'lstm_predicted', 'omega_mode': 'rmse'},
+    {**BASELINE, 'name': 'mat_mcap_mcap_lam_he', 'p_mode': 'lstm_predicted', 'q_mode': 'lambda', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_mcap_lam_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_mcap_lam_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'lambda', 'omega_mode': 'rmse', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_mcap_raw_he', 'p_mode': 'lstm_predicted', 'q_mode': 'raw_lam', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_mcap_raw_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'raw_lam', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_mcap_raw_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'raw_lam', 'omega_mode': 'rmse', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_mcap_inv_he', 'p_mode': 'lstm_predicted', 'q_mode': 'inv_lambda', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_mcap_inv_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'inv_lambda', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_mcap_inv_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'inv_lambda', 'omega_mode': 'rmse', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_mcap_vsp_he', 'p_mode': 'lstm_predicted', 'q_mode': 'vol_spread'},
+    {**BASELINE, 'name': 'mat_mcap_mcap_vsp_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper'},
+    {**BASELINE, 'name': 'mat_mcap_mcap_vsp_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'vol_spread', 'omega_mode': 'rmse'},
+    # ── prior=mcap × pw=eq ────────────────────────────────
+    {**BASELINE, 'name': 'mat_mcap_eq_fix_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq'},
+    {**BASELINE, 'name': 'mat_mcap_eq_fix_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'omega_mode': 'ff3_paper'},
+    {**BASELINE, 'name': 'mat_mcap_eq_fix_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'omega_mode': 'rmse'},
+    {**BASELINE, 'name': 'mat_mcap_eq_lam_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_eq_lam_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_eq_lam_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'rmse', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_eq_raw_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'raw_lam', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_eq_raw_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'raw_lam', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_eq_raw_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'raw_lam', 'omega_mode': 'rmse', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_eq_inv_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'inv_lambda', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_eq_inv_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'inv_lambda', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_eq_inv_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'inv_lambda', 'omega_mode': 'rmse', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_eq_vsp_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'vol_spread'},
+    {**BASELINE, 'name': 'mat_mcap_eq_vsp_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper'},
+    {**BASELINE, 'name': 'mat_mcap_eq_vsp_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'vol_spread', 'omega_mode': 'rmse'},
+    # ── prior=mcap × pw=rp ────────────────────────────────
+    {**BASELINE, 'name': 'mat_mcap_rp_fix_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp'},
+    {**BASELINE, 'name': 'mat_mcap_rp_fix_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'omega_mode': 'ff3_paper'},
+    {**BASELINE, 'name': 'mat_mcap_rp_fix_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'omega_mode': 'rmse'},
+    {**BASELINE, 'name': 'mat_mcap_rp_lam_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'lambda', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_rp_lam_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_rp_lam_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'lambda', 'omega_mode': 'rmse', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_rp_raw_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'raw_lam', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_rp_raw_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'raw_lam', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_rp_raw_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'raw_lam', 'omega_mode': 'rmse', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_rp_inv_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'inv_lambda', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_rp_inv_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'inv_lambda', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_rp_inv_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'inv_lambda', 'omega_mode': 'rmse', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_mcap_rp_vsp_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'vol_spread'},
+    {**BASELINE, 'name': 'mat_mcap_rp_vsp_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper'},
+    {**BASELINE, 'name': 'mat_mcap_rp_vsp_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'omega_mode': 'rmse'},
+    # ── prior=eq × pw=mcap ────────────────────────────────
+    {**BASELINE, 'name': 'mat_eq_mcap_fix_he', 'p_mode': 'lstm_predicted', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_mcap_fix_pap', 'p_mode': 'lstm_predicted', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_mcap_fix_rms', 'p_mode': 'lstm_predicted', 'omega_mode': 'rmse', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_mcap_lam_he', 'p_mode': 'lstm_predicted', 'q_mode': 'lambda', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_mcap_lam_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_mcap_lam_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'lambda', 'omega_mode': 'rmse', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_mcap_raw_he', 'p_mode': 'lstm_predicted', 'q_mode': 'raw_lam', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_mcap_raw_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'raw_lam', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_mcap_raw_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'raw_lam', 'omega_mode': 'rmse', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_mcap_inv_he', 'p_mode': 'lstm_predicted', 'q_mode': 'inv_lambda', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_mcap_inv_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'inv_lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_mcap_inv_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'inv_lambda', 'omega_mode': 'rmse', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_mcap_vsp_he', 'p_mode': 'lstm_predicted', 'q_mode': 'vol_spread', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_mcap_vsp_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_mcap_vsp_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'vol_spread', 'omega_mode': 'rmse', 'prior': 'capm_eq'},
+    # ── prior=eq × pw=eq ────────────────────────────────
+    {**BASELINE, 'name': 'mat_eq_eq_fix_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_eq_fix_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_eq_fix_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'omega_mode': 'rmse', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_eq_lam_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_eq_lam_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_eq_lam_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'rmse', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_eq_raw_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'raw_lam', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_eq_raw_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'raw_lam', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_eq_raw_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'raw_lam', 'omega_mode': 'rmse', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_eq_inv_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'inv_lambda', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_eq_inv_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'inv_lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_eq_inv_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'inv_lambda', 'omega_mode': 'rmse', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_eq_vsp_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'vol_spread', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_eq_vsp_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_eq_vsp_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'vol_spread', 'omega_mode': 'rmse', 'prior': 'capm_eq'},
+    # ── prior=eq × pw=rp ────────────────────────────────
+    {**BASELINE, 'name': 'mat_eq_rp_fix_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_rp_fix_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_rp_fix_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'omega_mode': 'rmse', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_rp_lam_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'lambda', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_rp_lam_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_rp_lam_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'lambda', 'omega_mode': 'rmse', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_rp_raw_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'raw_lam', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_rp_raw_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'raw_lam', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_rp_raw_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'raw_lam', 'omega_mode': 'rmse', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_rp_inv_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'inv_lambda', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_rp_inv_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'inv_lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_rp_inv_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'inv_lambda', 'omega_mode': 'rmse', 'prior': 'capm_eq', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_eq_rp_vsp_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_rp_vsp_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq'},
+    {**BASELINE, 'name': 'mat_eq_rp_vsp_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'omega_mode': 'rmse', 'prior': 'capm_eq'},
+    # ── prior=rp × pw=mcap ────────────────────────────────
+    {**BASELINE, 'name': 'mat_rp_mcap_fix_he', 'p_mode': 'lstm_predicted', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_mcap_fix_pap', 'p_mode': 'lstm_predicted', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_mcap_fix_rms', 'p_mode': 'lstm_predicted', 'omega_mode': 'rmse', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_mcap_lam_he', 'p_mode': 'lstm_predicted', 'q_mode': 'lambda', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_mcap_lam_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_mcap_lam_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'lambda', 'omega_mode': 'rmse', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_mcap_raw_he', 'p_mode': 'lstm_predicted', 'q_mode': 'raw_lam', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_mcap_raw_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'raw_lam', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_mcap_raw_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'raw_lam', 'omega_mode': 'rmse', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_mcap_inv_he', 'p_mode': 'lstm_predicted', 'q_mode': 'inv_lambda', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_mcap_inv_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'inv_lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_mcap_inv_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'inv_lambda', 'omega_mode': 'rmse', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_mcap_vsp_he', 'p_mode': 'lstm_predicted', 'q_mode': 'vol_spread', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_mcap_vsp_pap', 'p_mode': 'lstm_predicted', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_mcap_vsp_rms', 'p_mode': 'lstm_predicted', 'q_mode': 'vol_spread', 'omega_mode': 'rmse', 'prior': 'capm_rp'},
+    # ── prior=rp × pw=eq ────────────────────────────────
+    {**BASELINE, 'name': 'mat_rp_eq_fix_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_eq_fix_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_eq_fix_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'omega_mode': 'rmse', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_eq_lam_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_eq_lam_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_eq_lam_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'rmse', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_eq_raw_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'raw_lam', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_eq_raw_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'raw_lam', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_eq_raw_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'raw_lam', 'omega_mode': 'rmse', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_eq_inv_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'inv_lambda', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_eq_inv_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'inv_lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_eq_inv_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'inv_lambda', 'omega_mode': 'rmse', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_eq_vsp_he', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'vol_spread', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_eq_vsp_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_eq_vsp_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'vol_spread', 'omega_mode': 'rmse', 'prior': 'capm_rp'},
+    # ── prior=rp × pw=rp ────────────────────────────────
+    {**BASELINE, 'name': 'mat_rp_rp_fix_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_rp_fix_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_rp_fix_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'omega_mode': 'rmse', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_rp_lam_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'lambda', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_rp_lam_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_rp_lam_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'lambda', 'omega_mode': 'rmse', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_rp_raw_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'raw_lam', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_rp_raw_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'raw_lam', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_rp_raw_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'raw_lam', 'omega_mode': 'rmse', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_rp_inv_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'inv_lambda', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_rp_inv_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'inv_lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_rp_inv_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'inv_lambda', 'omega_mode': 'rmse', 'prior': 'capm_rp', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'mat_rp_rp_vsp_he', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_rp_vsp_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp'},
+    {**BASELINE, 'name': 'mat_rp_rp_vsp_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'omega_mode': 'rmse', 'prior': 'capm_rp'},
 
 ]
 
