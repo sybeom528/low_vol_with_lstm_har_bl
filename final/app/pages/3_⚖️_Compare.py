@@ -77,11 +77,15 @@ if not selected:
 
 # ── 메트릭 표 ────────────────────────────────────────────────
 sub = mt[mt['name'].isin(selected)].copy()
+_sortino_period_col = f'sortino_{period}'
 display_cols = ['name', 'canonical',
-                'sortino', f'sortino_{period}' if period != 'FULL' else 'sortino_FULL',
-                'sortino_ir' if 'sortino_ir' in sub.columns else 'sortino',
+                'sortino', _sortino_period_col,
+                'sortino_ir',
                 'sharpe', 'cagr', 'mdd', 'beta', 'alpha']
-display_cols = [c for c in display_cols if c in sub.columns]
+# 컬럼 존재 여부 + 중복 제거 (순서 보존)
+seen = set()
+display_cols = [c for c in display_cols
+                if c in sub.columns and not (c in seen or seen.add(c))]
 st.dataframe(sub[display_cols].round(3), use_container_width=True, hide_index=True)
 
 
@@ -92,3 +96,4 @@ rets_dict = {n: results[n]['ret'] for n in selected if n in results}
 fig = plot_compare_panel(rets_dict, rf, spy, period_map[period],
                           include_spy=include_spy)
 st.pyplot(fig)
+import matplotlib.pyplot as _plt; _plt.close(fig)

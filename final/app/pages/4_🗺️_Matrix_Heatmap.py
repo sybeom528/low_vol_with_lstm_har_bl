@@ -27,8 +27,11 @@ st.markdown(MATRIX_INTRO)
 
 period = st.sidebar.radio('평가 기간', ['TEST', 'HOLD_OUT', 'FULL'], index=0)
 
-# 메트릭 선택
-metric_options = {
+# Get master_table 먼저 — 가용 컬럼 목록 확인용
+_mt_check = get_master_table(sort_by='sortino')
+
+# 메트릭 옵션 — mt 에 실제로 존재하는 컬럼만
+_all_metric_options = {
     f'sortino_{period}'  : f'Sortino ({period})',
     f'sharpe_{period}'   : f'Sharpe ({period})',
     f'cagr_{period}'     : f'CAGR ({period})',
@@ -37,12 +40,20 @@ metric_options = {
     'sortino_ir'         : 'Sortino IR (3-레짐 안정성)',
     'sharpe'             : 'Sharpe (overall)',
 }
+metric_options = {k: v for k, v in _all_metric_options.items() if k in _mt_check.columns}
+
+if not metric_options:
+    st.error('master_table 에 표시할 metric 컬럼이 없습니다. 데이터 상태 확인 필요.')
+    st.stop()
+
 metric_label = st.sidebar.radio('메트릭', list(metric_options.values()),
-                                 index=0, help='Sortino 우선 (사용자 요청)')
+                                 index=0, help='Sortino 우선 (사용자 요청). 컬럼이 mt 에 있는 것만 노출됨.')
 metric_col = [k for k, v in metric_options.items() if v == metric_label][0]
 
-
-mt = get_master_table(sort_by=metric_col if metric_col != f'mdd_{period}' else f'sortino_{period}')
+# Re-sort with chosen metric (mdd 는 작을수록 좋아 sortino 로 우회 정렬)
+sort_metric = metric_col if metric_col != f'mdd_{period}' else f'sortino_{period}'
+sort_metric = sort_metric if sort_metric in _mt_check.columns else 'sortino'
+mt = get_master_table(sort_by=sort_metric)
 
 # LSTM 매트릭스만 필터
 mat_only = mt[mt['p_s'] == 'ls'].copy() if 'p_s' in mt.columns else mt.copy()
@@ -100,6 +111,7 @@ ax.set_title(f'행 = {row_keys[0]}×{row_keys[1]}  ·  열 = {col_keys[0]}×{col
 fig.colorbar(im, ax=ax, label=metric_label)
 plt.tight_layout()
 st.pyplot(fig)
+plt.close(fig)
 
 
 st.divider()

@@ -94,6 +94,7 @@ for col_idx, name in enumerate(top3):
                 ax.grid(True, alpha=0.3)
                 plt.tight_layout()
                 st.pyplot(fig)
+                plt.close(fig)   # 메모리 누수 방지
 
         # 추천 근거
         reason = reasoning_for_recommendation(mt, name, risk_score, period)

@@ -61,12 +61,17 @@ st.caption(f'필터 후 {len(mt_f)} 실험 / 전체 {len(mt)}  ·  default 정�
 
 
 # ── 마스터 테이블 ───────────────────────────────────────────
+_sortino_period_col = f'sortino_{period}'
+_sharpe_period_col  = f'sharpe_{period}'
 display_cols = ['name', 'canonical', 'prior_s', 'pw_s', 'q_s', 'om_s',
-                'sortino', f'sortino_{period}' if period != 'FULL' else 'sortino_FULL',
-                'sharpe', f'sharpe_{period}' if period != 'FULL' else 'sharpe_FULL',
-                'sortino_ir' if 'sortino_ir' in mt_f.columns else 'sortino',
+                'sortino', _sortino_period_col,
+                'sharpe',  _sharpe_period_col,
+                'sortino_ir',
                 'cagr', 'mdd', 'beta', 'alpha']
-display_cols = [c for c in display_cols if c in mt_f.columns]
+# 컬럼 존재 여부 + 중복 제거 (순서 보존)
+seen = set()
+display_cols = [c for c in display_cols
+                if c in mt_f.columns and not (c in seen or seen.add(c))]
 
 st.dataframe(
     mt_f[display_cols].round(3),
@@ -81,6 +86,10 @@ st.divider()
 st.subheader('🔬 단일 실험 6 패널 진단')
 
 names_options = mt_f['name'].tolist()
+if not names_options:
+    st.warning('필터 결과가 비어있습니다. 사이드바의 슬롯 필터를 다시 확인하세요.')
+    st.stop()
+
 default_idx = 0
 if TOP_1_NAME in names_options:
     default_idx = names_options.index(TOP_1_NAME)
@@ -96,6 +105,7 @@ if selected and selected in results:
     fig = plot_single_panel(results[selected], rf, spy,
                             period_map[period], selected)
     st.pyplot(fig)
+    import matplotlib.pyplot as _plt; _plt.close(fig)
 
     cfg = results[selected].get('config', {})
     with st.expander(f'⚙ Config — {selected}', expanded=False):

@@ -88,8 +88,12 @@ st.subheader(f'📈 누적수익률 — Top 5 (Sortino_{period}) + SPY + baselin
 
 sortino_col = f'sortino_{period}' if f'sortino_{period}' in mt.columns else 'sortino'
 top5_names  = mt.nlargest(5, sortino_col)['name'].tolist()
-plot_names  = list(set(top5_names + [TOP_1_NAME, 'baseline']))
-# 사용자 지정 Top 1 + baseline 포함 보장
+# 순서 보존 dedup — TOP_1 우선, baseline 끝, Top 5 사이에 끼움
+_must_include = [TOP_1_NAME, 'baseline']
+plot_names = []
+for n in _must_include + top5_names:
+    if n not in plot_names and n in results:
+        plot_names.append(n)
 
 # 기간 결정
 period_map = {
@@ -102,7 +106,7 @@ start, end = period_map[period]
 fig, ax = plt.subplots(figsize=(14, 5))
 colors = plt.cm.tab10(np.linspace(0, 1, len(plot_names) + 1))
 
-for i, n in enumerate(sorted(plot_names)):
+for i, n in enumerate(plot_names):   # 순서 보존 (TOP_1 우선)
     if n not in results:
         continue
     ret = results[n]['ret']
@@ -127,6 +131,7 @@ ax.legend(loc='upper left', fontsize=9)
 ax.grid(True, alpha=0.3)
 plt.tight_layout()
 st.pyplot(fig)
+plt.close(fig)
 
 
 st.divider()

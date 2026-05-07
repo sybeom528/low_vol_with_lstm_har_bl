@@ -54,7 +54,13 @@ def recommend_top3(mt: pd.DataFrame, risk_score: int,
             if mdd_col in mt.columns else mt[mt['name'] != TOP_1_NAME]
         sort_key = 'sortino_ir' if 'sortino_ir' in rest_pool.columns else sortino_col
         rest = rest_pool.nlargest(2, sort_key)['name'].tolist()
-        return (base + rest)[:3]
+        out = base + rest
+
+        # 3개 미만이면 mt 전체에서 추가로 채움 (MDD 필터 완화)
+        if len(out) < 3:
+            backup = mt[~mt['name'].isin(out)].nlargest(3 - len(out), sortino_col)['name'].tolist()
+            out = out + backup
+        return out[:3]
 
     elif tier == 'balanced':
         # sortino_ir 우선 (3-레짐 안정성)
