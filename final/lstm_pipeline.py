@@ -367,7 +367,7 @@ def run_walkforward_for_ticker(ticker: str,
         is_len=config['is_len'],
         purge=oos_len_buffer,
         embargo=config['embargo'],
-        oos_len=config['oos_len'],
+        oos=config['oos_len'],     # ⭐ timeseries_lib 시그니처 = 'oos' (lstm_pipeline 의 'oos_len' → 매핑)
         step=config['step'],
     )
 
