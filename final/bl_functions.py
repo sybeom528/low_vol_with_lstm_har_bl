@@ -350,8 +350,11 @@ def optimize_portfolio(
 
 def compute_turnover(w_new: pd.Series, w_prev: pd.Series) -> float:
     """
-    |w_new - w_prev| 합계 (신규/이탈 종목 포함).
-    결과는 0~2 범위 (완전 교체 시 2.0).
+    Two-way turnover: Σ|w_new - w_prev| (신규/이탈 종목 포함).
+    범위 0~2 (완전 교체 시 2.0) — 매수+매도를 모두 카운트.
+
+    apply_tc()와 함께 쓸 때 tc는 편측(per-side) 비용으로 해석:
+      TC = turnover × tc = (매수량 + 매도량) × 편측rate
 
     재천님 코드 기반으로 만들어진 부분.
     """
@@ -366,7 +369,12 @@ def compute_turnover(w_new: pd.Series, w_prev: pd.Series) -> float:
 
 
 def apply_tc(gross_ret: float, turnover: float, tc: float) -> float:
-    """net_ret = gross_ret - turnover × tc."""
+    """
+    net_ret = gross_ret - turnover × tc.
+
+    turnover: two-way (Σ|Δw| ∈ [0,2]), tc: 편측(per-side) rate.
+    예) tc=0.001 (10bp/side), turnover=0.5 → TC = 0.0005 (월 5bp)
+    """
     return gross_ret - turnover * tc
 
 
