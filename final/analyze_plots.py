@@ -75,7 +75,7 @@ def load_returns(names, results_dir) -> dict:
 # ══════════════════════════════════════════════════════════════════════
 def plot_marginal_effects(
     mt: pd.DataFrame,
-    metric: str = 'sharpe',
+    metric: str = 'sortino',   # 사용자 요청: Sortino 우선 (2026-05-07)
     slots: list = None,
     figsize=(15, 9),
     save_path=None,
@@ -143,7 +143,7 @@ def plot_marginal_effects(
 # ══════════════════════════════════════════════════════════════════════
 def plot_matrix_heatmap(
     mt: pd.DataFrame,
-    metric: str = 'sharpe',
+    metric: str = 'sortino',   # 사용자 요청: Sortino 우선 (2026-05-07)
     only_lstm: bool = True,
     only_matrix_cells: bool = False,
     row_keys=('prior_s', 'pw_s'),
@@ -265,7 +265,7 @@ def plot_top_n_analysis(
     spy_ret: pd.Series,
     rf: pd.Series,
     n: int = 5,
-    metric: str = 'sharpe',
+    metric: str = 'sortino',   # 사용자 요청: Sortino 우선 (2026-05-07)
     top_names: list = None,
     rolling_window: int = 12,
     figsize=(15, 10),
