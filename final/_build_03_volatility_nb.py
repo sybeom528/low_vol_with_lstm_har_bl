@@ -15,7 +15,7 @@ def code(text):
 # ─────────────────────────────────────────────────────────────────
 md("""# 03 — Volatility Forecasting (모델 구축)
 
-> **목적**: 시계열_Test 의 Phase 1.5 (변동성 예측) + Phase 3 (Stockwise 615 종목 학습) 결과를 final/ 환경에서 재현·검증합니다.
+> **목적**: Phase 1.5 (변동성 예측) + Phase 3 (Stockwise 615 종목 학습) 결과를 final/ 환경에서 재현·검증합니다.
 > 본 노트북은 Stockwise LSTM (per-ticker, 615 종목) + HAR-RV + Performance-Weighted Ensemble 의 학습·평가 파이프라인입니다.
 > **Cross-Sectional 모델 제외** (분석 미활용).
 
@@ -79,10 +79,10 @@ print(f"FORCE_RECOMPUTE: {FORCE_RECOMPUTE}")''')
 # ─────────────────────────────────────────────────────────────────
 md("""## §1. CSV 데이터 정합성 검증 ⚠️
 
-`final/phase3(data_outputs)/data/ensemble_predictions_stockwise.csv` 가 시계열_Test 원본과 정확히 일치하는지 검증합니다.
+`final/phase3(data_outputs)/data/ensemble_predictions_stockwise.csv` 가 snapshot 과 정확히 일치하는지 검증합니다.
 
 **검증 항목**:
-1. md5 hash 일치 (시계열_Test 원본과 byte-byte 동일)
+1. md5 hash 일치 (snapshot 과 byte-byte 동일)
 2. row / column / 종목 수 / 날짜 범위
 3. y_true 의 -inf 행 제거 (거래정지 등)
 4. 615 종목 stockwise 환경 RMSE 평균 (LSTM 0.43±, HAR 0.39±, Ensemble 0.38±)""")
@@ -98,8 +98,8 @@ with open(CSV_PATH, 'rb') as f:
     md5 = hashlib.md5(f.read()).hexdigest()
 print(f"md5: {md5}")
 EXPECTED_MD5 = '1e9ab2faf63fdfd4abbb54083a1cb0fb'
-assert md5 == EXPECTED_MD5, f"md5 불일치! 시계열_Test 원본과 다름. expected={EXPECTED_MD5}"
-print(f"  ✓ 시계열_Test 원본과 byte-byte 일치 (expected {EXPECTED_MD5})")''')
+assert md5 == EXPECTED_MD5, f"md5 불일치! snapshot 과 다름. expected={EXPECTED_MD5}"
+print(f"  ✓ snapshot 과 byte-byte 일치 (expected {EXPECTED_MD5})")''')
 
 code('''# 1.2 데이터 로드 + 기본 정제 (-inf 제거)
 print()
@@ -203,7 +203,7 @@ print("-" * 60)
 
 if FORCE_RECOMPUTE:
     print("⚠️  FORCE_RECOMPUTE=True — 615 종목 재학습 시작")
-    print("   GPU + 3~5시간 소요, 시계열_Test/Phase1_5_Volatility/scripts/ 모듈 필요")
+    print("   GPU + 3~5시간 소요, 외부 GPU 환경 필요 (본 노트북은 cache hit 모드 권장)")
     print("   본 노트북은 cache hit 모드 (False) 를 권장합니다.")
     raise NotImplementedError("재학습 경로는 노트북 외부 (scripts/_run_*.py) 에서 실행 권장")
 else:
@@ -325,7 +325,7 @@ print(f"\\n저장: {OUT_DIR}/fig2_best_model_and_samples.png")''')
 # ─────────────────────────────────────────────────────────────────
 md("""## §7. 결과 검증 + 종합 요약
 
-핵심 수치를 시계열_Test 의 §2-B 학술 통계 결과와 비교 검증합니다 (tolerance 내 일치).""")
+핵심 수치를 Phase 3-2 (snapshot) 의 §2-B 학술 통계 결과와 비교 검증합니다 (tolerance 내 일치).""")
 
 code('''# §7.1 핵심 수치 검증
 print("§7.1 핵심 수치 검증")
@@ -341,10 +341,10 @@ metrics = {
     'best_lstm_count': int(best_per_ticker.get('lstm', 0)),
 }
 
-# 시계열_Test §2-B 의 503 종목 필터 결과와 비교 가능 (tol=0.02)
+# Phase 3-2 (snapshot) §2-B 의 503 종목 필터 결과와 비교 가능 (tol=0.02)
 # 본 615 전체에서는 약간 차이 있을 수 있어 tol 조정
 expected = {'lstm_rmse': 0.4298, 'har_rmse': 0.3922, 'ensemble_rmse': 0.3815}
-print(f"\\n시계열_Test §2-B 기대값과 비교 (tol=0.10, 615 종목 전체):")
+print(f"\\nPhase 3-2 (snapshot) §2-B 기대값과 비교 (tol=0.10, 615 종목 전체):")
 for k, exp in expected.items():
     actual = metrics[k]
     diff = abs(actual - exp)
@@ -391,7 +391,7 @@ print()
 print("=" * 60)
 print("Phase 1.5 + Phase 3 Stockwise 통합 검증 완료")
 print("=" * 60)
-print(f"  ✓ csv md5 일치: {md5} (시계열_Test 원본과 byte-byte 동일)")
+print(f"  ✓ csv md5 일치: {md5} (snapshot 과 byte-byte 동일)")
 print(f"  ✓ 종목 수 613 ⊂ final universe 833")
 print(f"  ✓ Walk-Forward 224 fold × 613 종목 학습 결과 활용")
 print(f"  ✓ Performance-Weighted Ensemble best in {metrics['best_ensemble_count']} 종목 ({metrics['best_ensemble_count']/613*100:.1f}%)")

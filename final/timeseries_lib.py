@@ -1,25 +1,30 @@
 """
 timeseries_lib.py — Phase 1.5 + Phase 3-2 핵심 함수 통합 (CS 제외)
 
-본 모듈은 시계열_Test 폴더의 1,754 + 14,125 라인 작업 산출물에서 재현에 필요한
-핵심 함수만 추출한 통합 모듈입니다. 03_Volatility_Forecasting.ipynb 와
-04_Statistical_Validation.ipynb 가 본 모듈을 import 하여 사용합니다.
+final/ 폴더의 표준 시계열·통계 함수 모듈. 03_Volatility_Forecasting.ipynb 와
+04_Statistical_Validation.ipynb, lstm_pipeline.py 가 본 모듈을 import 하여 사용합니다.
 
-추출 출처
----------
-- Phase1_5_Volatility/scripts/{models, train, dataset, targets_volatility,
-  baselines_volatility, metrics_volatility}.py
-- Phase3_Robust_Extensions/scripts/{volatility_ensemble, _run_2b_*}.py
+함수 카테고리
+-------------
+- 환경: setup_seeds, setup_korean_font
+- 타깃: build_log_rv_target, verify_no_leakage
+- Walk-Forward: walk_forward_folds, build_fold_inputs
+- LSTM v4: LSTMRegressor, train_one_fold, count_parameters
+- HAR-RV: fit_har_rv
+- Ensemble: diebold_pauly_weights, ensemble_predict
+- 평가: rmse, qlike, r2_train_mean, pred_std_ratio, mz_regression, dm_test
+- 통계: anova_variance_decomp, welch_anova, kruskal_wallis_eps_sq,
+        pairwise_mann_whitney, cohen_d, heavy_tail_stats
+- 보고: rmse_with_pct_summary, format_rmse_summary
 
 CS 제외
 -------
-Cross-Sectional (Ticker Embedding LSTM, models_cs.py) 는 분석 활용 X 이므로
-본 모듈에서 추출 X. 통합 대상 = Stockwise (per-ticker LSTM) + HAR-RV +
-Diebold-Pauly Performance-Weighted Ensemble 만.
+Cross-Sectional (Ticker Embedding LSTM) 는 본 모듈에서 추출 X. 통합 대상 =
+Stockwise (per-ticker LSTM) + HAR-RV + Diebold-Pauly Performance-Weighted Ensemble.
 
 사용 예
 -------
->>> from final import timeseries_lib as tlib
+>>> import timeseries_lib as tlib
 >>> tlib.setup_seeds(42)
 >>> rmse_val = tlib.rmse(y_true, y_pred)
 
@@ -821,8 +826,7 @@ def assert_close(actual: float, expected: float, tol: float = 0.005,
 def assert_phase15_results(metrics: Dict) -> None:
     """Phase 1.5 v8 ensemble 핵심 수치 검증.
 
-    예상값 (시계열_Test 의 ensemble_predictions_stockwise.csv 기준):
-        - 615 종목 stockwise 환경
+    Snapshot 기준 (5월 초 panel cutoff 시점의 615 종목 stockwise 학습 결과):
         - LSTM avg RMSE ≈ 0.4298
         - HAR avg RMSE ≈ 0.3922
         - Ensemble avg RMSE ≈ 0.3815

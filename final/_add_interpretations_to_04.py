@@ -13,7 +13,7 @@ NB_PATH = Path('final/04_Statistical_Validation.ipynb')
 INTERPRETATIONS = {
     4: """### 결과 해석 — §1.1 ~ §1.2
 
-- **2,468,883 → 2,468,770 행** (113 행 = 약 0.005% 제거): `y_true = -inf` 인 극소수 행만 제거. 대부분 거래정지 / 단일 가격 윈도우 등으로 std=0 → log(0)=-inf 가 발생한 케이스입니다. 본 필터링은 평균·분산 계산의 수치적 안정성을 위한 표준 처리이며, 시계열_Test §2-B 도 동일하게 적용했습니다.
+- **2,468,883 → 2,468,770 행** (113 행 = 약 0.005% 제거): `y_true = -inf` 인 극소수 행만 제거. 대부분 거래정지 / 단일 가격 윈도우 등으로 std=0 → log(0)=-inf 가 발생한 케이스입니다. 본 필터링은 평균·분산 계산의 수치적 안정성을 위한 표준 처리이며, Phase 3-2 (snapshot) §2-B 도 동일하게 적용했습니다.
 - **503 종목 필터**: 5 시기 (P1~P5) 모두 cover 하는 종목만 선택. 인수합병·파산·신규상장 등으로 일부 시기에만 데이터가 있는 110 종목을 제외하여 **시기 간 평균 비교의 공정성** 을 확보합니다. Phase 3-2 §2-B 의 표준 절차이며, 본 결과 503 종목으로 정확히 일치합니다.""",
 
     5: """### 결과 해석 — §1.3 RMSE 패널 구조
@@ -28,10 +28,10 @@ INTERPRETATIONS = {
     6: """### 결과 해석 — §1.4 Sector 매핑
 
 - **98.2% 매칭율**: `final/data/monthly_panel.csv` 의 `gics_sector` 컬럼을 통해 503 종목 중 약 494 종목에 sector 부여 성공. 9 종목만 'Unknown' 으로 분류됩니다.
-- **18 sector 분류**: 시계열_Test 의 12 sector 분류 (Wikipedia 표준 GICS) 와 다른 환경입니다.
+- **18 sector 분류**: snapshot 환경의 12 sector 분류 (Wikipedia 표준 GICS) 와 다른 환경입니다.
   - `Industrials`, `Financials`, `Health Care` 등 주요 sector 외에
   - `Financial Services` (12), `Healthcare` (9), `Technology` (3), `Basic Materials` (5), `Consumer Cyclical` (27), `Consumer Defensive` (2) 등 **세분화된 분류** 가 추가됨
-- 이 차이는 final 의 monthly_panel 이 다른 데이터 소스 (yfinance / Yahoo Finance 의 `industry` 필드 등) 에서 sector 를 가져왔기 때문입니다. 시계열_Test 의 KW H=70.55 가 본 결과 H=97.30 으로 더 큰 이유 — sector 가 더 세분화되면 그룹 간 차이가 더 잘 드러납니다.""",
+- 이 차이는 final 의 monthly_panel 이 다른 데이터 소스 (yfinance / Yahoo Finance 의 `industry` 필드 등) 에서 sector 를 가져왔기 때문입니다. snapshot 의 KW H=70.55 가 본 결과 H=97.30 으로 더 큰 이유 — sector 가 더 세분화되면 그룹 간 차이가 더 잘 드러납니다.""",
 
     8: """### 결과 해석 — §2 ANOVA Variance Decomposition ⭐⭐⭐
 
@@ -48,7 +48,7 @@ INTERPRETATIONS = {
 2. **종목 효과 19.4%** (η²=0.1944) — Cohen LARGE 영역 (≥0.14). 종목별 학습 (stockwise) 의 정당성을 입증.
 3. **잔차 35.6%** — 시기·종목으로 설명되지 않는 노이즈. 일반적인 사회과학 ANOVA 보다 잔차 비중이 작습니다 (시기 효과가 매우 강하기 때문).
 
-**시계열_Test §2-B 와의 정합**: η²_period=0.450 (기대) vs **0.4498** (재현) = 거의 완벽 일치. F_period=634.6 (기대) vs **634.56** (재현) — 통계량까지 일치.
+**Phase 3-2 §2-B snapshot 과의 정합**: η²_period=0.450 (기대) vs **0.4498** (재현) = 거의 완벽 일치. F_period=634.6 (기대) vs **634.56** (재현) — 통계량까지 일치.
 
 **학술적 함의** (명제 1): "LSTM 변동성 예측 정확도의 변동의 거의 절반은 분석 시기 그 자체로 설명됨" → 단일 시기 결과의 일반화는 매우 위험. Engle, Ghysels, Sohn (2013) 의 multi-frequency 변동성 framework 와 일치.""",
 
@@ -65,7 +65,7 @@ INTERPRETATIONS = {
 2. **Welch's F = 420.59** → 이분산 가정 없이도 **여전히 매우 유의** (p<1e-16). 기본 F (634.56) 대비 약 33% 작아졌으나, p-value 는 여전히 컴퓨터 부동소수점 한계 (1e-16) 에 도달.
 3. **결론**: §2 의 시기 효과 발견은 **분석 방법론의 가정 위반에 영향받지 않는 robust 한 결과**.
 
-**시계열_Test §2-B 와의 정합**: Welch F = 420.59 (기대) vs **420.59** (재현) = 완벽 일치, Levene 16.78 도 동일.
+**Phase 3-2 §2-B snapshot 과의 정합**: Welch F = 420.59 (기대) vs **420.59** (재현) = 완벽 일치, Levene 16.78 도 동일.
 
 **학술적 함의**: Reviewer 의 "기본 ANOVA 의 등분산 가정이 깨진 것 아니냐?" 라는 비판에 직접 답할 수 있는 robust 보강. Welch (1951) 의 이분산 ANOVA 표준 절차 적용.""",
 
@@ -80,11 +80,11 @@ INTERPRETATIONS = {
 **핵심 의미**:
 
 1. **H=97.30, p<1e-12** → 18 sector 의 RMSE 분포가 동일하다는 귀무가설을 강하게 기각. Sector 가 변동성 예측 어려움의 systematic factor.
-2. **ε²=0.1656 = large 영역** (Tomczak & Tomczak 2014 기준, large ≥ 0.16). 시계열_Test §2-B 의 ε²=0.121 (medium) 보다 더 큰 효과 — final 의 sector 가 18 개로 세분화되어 그룹 간 차이가 더 뚜렷하게 나타남.
+2. **ε²=0.1656 = large 영역** (Tomczak & Tomczak 2014 기준, large ≥ 0.16). Phase 3-2 (snapshot) §2-B 의 ε²=0.121 (medium) 보다 더 큰 효과 — final 의 sector 가 18 개로 세분화되어 그룹 간 차이가 더 뚜렷하게 나타남.
 3. **비모수 (Kruskal-Wallis)** 사용 정당성: §6 에서 입증할 heavy-tail 분포 (Skew +1.30) 환경에서는 정규성 가정이 깨지므로 ANOVA 보다 KW 가 robust 합니다.
 
-**시계열_Test §2-B 와의 차이 — sector mapping 효과**:
-- 시계열_Test (12 sector): H=70.55, ε²=0.121 (medium)
+**Phase 3-2 §2-B snapshot 과의 차이 — sector mapping 효과**:
+- 12 sector mapping (snapshot 환경): H=70.55, ε²=0.121 (medium)
 - 본 재현 (18 sector): H=97.30, ε²=0.166 (large)
 - 두 결과 모두 **sector effect 통계 유의** 라는 결론은 동일하나, 세분화된 sector 가 효과를 더 강하게 드러냄.""",
 
@@ -110,7 +110,7 @@ INTERPRETATIONS = {
 2. 만약 large-n 함정이라면 Bonferroni 통과 pair 의 d 분포에 small/medium 이 다수 섞여야 합니다. 0% 가 small/medium 이라는 것은 **모든 sig 결과가 진짜 LARGE 효과**임을 입증.
 3. 이 검증은 사용자께서 2026-05-02 에 제기하신 우려 ("p값은 유의하게 나오는데 n수 자체가 많다는 등의 이유로 유의하게 나타났을 가능성") 에 대한 **직접적 답변**.
 
-**시계열_Test §2-B 와의 정합**: 14/14 LARGE (시계열_Test, 12 sector) vs 24/24 LARGE (재현, 18 sector) — 둘 다 100% LARGE 유지.""",
+**Phase 3-2 §2-B snapshot 과의 정합**: 14/14 LARGE (Phase 3-2 (snapshot), 12 sector) vs 24/24 LARGE (재현, 18 sector) — 둘 다 100% LARGE 유지.""",
 
     16: """### 결과 해석 — §5.3 Top 15 Sector Pair (절대 효과크기)
 
@@ -130,7 +130,7 @@ INTERPRETATIONS = {
 | **Jarque-Bera** | 605.60 | 5.99 (df=2, α=0.05) | 임계값의 **101 배** → 정규성 강하게 기각 |
 | **Anderson-Darling** | 4.89 | 0.78 (5%) | 임계값의 **6.3 배** → 정규성 기각 |
 
-**시계열_Test §2-B 와의 정합 (완벽 일치)**:
+**Phase 3-2 §2-B snapshot 정합 (완벽 일치)**:
 
 | 지표 | 기대 | 재현 |
 |---|---|---|
@@ -287,7 +287,7 @@ INTERPRETATIONS = {
 | 3 | Sector effect 통계 유의 | KW H>50, LARGE pair ≥5 | H=97.30, LARGE pair=24 | ✅ **PASS** |
 | 4 | COVID sector-specific | 충격 비율 >1.5배 | Top/Bottom = 5.6 배 (Utilities/Healthcare) | ✅ **PASS** |
 
-**최종 결론**: **4 학술 명제 모두 PASS — 시계열_Test §2-B 학술 통계 결과 final/ 환경에서 완벽 재현**.
+**최종 결론**: **4 학술 명제 모두 PASS — Phase 3-2 §2-B 학술 통계 결과 (snapshot) 가 final/ 환경에서 완벽 재현**.
 
 **학술 baseline 매핑**:
 - 명제 1 ↔ Engle, Ghysels, Sohn (2013) — multi-frequency 변동성
@@ -308,9 +308,9 @@ Heavy-tail:   Skew=+1.30, Kurt=+4.71, JB=605.60 (p=3.13e-132), AD=4.89
 4 학술 명제:    모두 PASS
 ```
 
-**시계열_Test §2-B 와의 정합 매트릭스 (완벽 일치 8/9)**:
+**Phase 3-2 §2-B snapshot 정합 매트릭스 (완벽 일치 8/9)**:
 
-| 지표 | 시계열_Test 기대 | 본 재현 | 정합 |
+| 지표 | snapshot 기대 | 본 재현 | 정합 |
 |---|---|---|---|
 | η²_period | 0.450 | 0.4498 | ✓ |
 | η²_ticker | 0.194 | 0.1944 | ✓ |
@@ -325,7 +325,7 @@ Heavy-tail:   Skew=+1.30, Kurt=+4.71, JB=605.60 (p=3.13e-132), AD=4.89
 **재현성 보장**:
 - random seed = 42 고정
 - csv md5 byte-byte 일치 (`1e9ab2faf63fdfd4abbb54083a1cb0fb`)
-- 4 학술 명제 모두 PASS (시계열_Test 결과의 final/ 환경 완벽 재현)
+- 4 학술 명제 모두 PASS (snapshot 결과의 final/ 환경 완벽 재현)
 
 본 분석은 사용자 우려 (large-n 함정) 에 대한 직접적 답변이며, 학술 보고서의 reviewer 비판에 robust 하게 대응할 수 있는 multi-evidence 구조 (statistical + visual + effect size) 를 제공합니다.""",
 }

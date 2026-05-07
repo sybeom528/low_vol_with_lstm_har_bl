@@ -14,7 +14,7 @@ def code(text):
 # ─────────────────────────────────────────────────────────────────
 md("""# 04 — Statistical Validation (학술 통계 심화)
 
-> **목적**: 시계열_Test Phase 3-2 §2-B 의 학술 통계 결과 (η²=0.450, Welch F=420.59, Skew=+1.30, Kurt=+4.71) 를 final/ 환경에서 재현·검증합니다.
+> **목적**: Phase 3-2 (snapshot) Phase 3-2 §2-B 의 학술 통계 결과 (η²=0.450, Welch F=420.59, Skew=+1.30, Kurt=+4.71) 를 final/ 환경에서 재현·검증합니다.
 > Cohen (1988) 효과크기 + Welch (1951) ANOVA + Lin (2013) large-n 함정 보강.
 
 ## 노트북 구성
@@ -576,7 +576,7 @@ print(f"  Top: {top1:+.3f} ({delta_sorted.index[0]}), "
 all_pass = prop1 and prop2 and prop3 and prop4
 print()
 print("=" * 60)
-print(f"4 학술 명제 검증: {'✓ 모두 PASS — 시계열_Test 결과 재현' if all_pass else '⚠ 일부 FAIL'}")
+print(f"4 학술 명제 검증: {'✓ 모두 PASS — snapshot 결과 재현' if all_pass else '⚠ 일부 FAIL'}")
 print("=" * 60)''')
 
 code('''# §9.2 summary.json 저장
