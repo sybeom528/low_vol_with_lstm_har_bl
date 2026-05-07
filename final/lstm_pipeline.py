@@ -845,7 +845,14 @@ def run_ensemble_for_universe_parallel(
     if n_workers is None:
         n_workers = auto_n_workers(device, verbose=verbose)
 
-    # incremental 모드 — 기존 fold predictions 로드 + universe 일관성 강제
+    # incremental 모드 — 기존 fold predictions 로드
+    # ⭐ Universe 정책 (사용자 결정, 2026-05-08): final 의 universe 기준
+    #   - target = final panel 의 종목
+    #   - fold csv 에 학습 history 가 있는 종목 → incremental (max fold 부터)
+    #   - fold csv 에 없지만 panel 에 있는 종목 → full 학습 (start_k=0)
+    #   - panel 에 없는 종목 (학습 불가) → drop
+    # 즉, fold csv 의 시계열_Test 만 있는 종목은 자동으로 final universe 에서 제외됨
+    # (panel 에 없으므로 args_list 에 안 들어감)
     existing_fold_all = None
     if incremental:
         if not fold_path.exists():
@@ -858,28 +865,28 @@ def run_ensemble_for_universe_parallel(
                 print(f'  ⚡ Incremental 모드: {len(existing_fold_all):,} rows, '
                       f'max fold {int(existing_fold_all["fold"].max())}')
 
-            # ⭐ Panel 일관성 보강 (Critical):
-            # incremental 모드에서 fold csv 의 종목 ⊂ panel 종목 강제
-            # 그렇지 않으면 fold 0~N 학습 결과 + fold N+1~ 새 학습 결과의 종목이 달라
-            # 통합 ensemble 의 의미가 약해짐
+            # final universe 기준 진단 (정보 표시만, 종목 list 는 그대로 유지)
             fold_tickers = set(existing_fold_all['ticker'].unique())
             panel_tickers = set(panel['ticker'].unique())
             target_set = set(universe_tickers)
 
-            # 교집합: fold csv 와 panel 모두에 있는 종목
-            consistent_universe = fold_tickers & panel_tickers & target_set
-            if len(consistent_universe) < len(target_set):
-                if verbose:
-                    n_drop_panel = len(target_set - panel_tickers)
-                    n_drop_fold = len(target_set - fold_tickers)
-                    print(f'  ⚙ Panel 일관성 보강 (Critical):')
-                    print(f'    target universe        : {len(target_set)}')
-                    print(f'    fold csv 에 학습된 종목: {len(fold_tickers)}')
-                    print(f'    final panel 에 있는 종목: {len(panel_tickers)}')
-                    print(f'    consistent (3 교집합)  : {len(consistent_universe)}')
-                    if n_drop_panel > 0:
-                        print(f'    제외 — panel 부재 {n_drop_panel}, fold 부재 {n_drop_fold}')
-                universe_tickers = sorted(consistent_universe)
+            in_panel_target = panel_tickers & target_set
+            with_history = fold_tickers & in_panel_target          # incremental 학습
+            without_history = in_panel_target - fold_tickers       # full 학습 (fold csv 에 없음)
+            fold_only = (fold_tickers & target_set) - panel_tickers  # 학습 불가 (panel 부재)
+
+            if verbose:
+                print(f'  ⚙ final universe 기준 학습 분류:')
+                print(f'    target universe            : {len(target_set)}')
+                print(f'    panel ∩ target             : {len(in_panel_target)}')
+                print(f'    그 중 fold history 있음    : {len(with_history)}  → incremental (max fold 부터)')
+                print(f'    그 중 fold history 없음    : {len(without_history)}  → full 학습 (start_k=0)')
+                print(f'    fold 에만 있음 (panel 부재): {len(fold_only)}  → 학습 skip (자동)')
+                if without_history and len(without_history) <= 30:
+                    print(f'    full 학습 대상 종목: {sorted(without_history)[:30]}')
+
+            # universe_tickers 는 panel ∩ target 으로 재설정 (panel 에 없는 종목 자동 제외)
+            universe_tickers = sorted(in_panel_target)
 
     # ticker 별 args 준비
     args_list = []
