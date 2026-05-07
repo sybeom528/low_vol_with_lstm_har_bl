@@ -20,6 +20,17 @@ bl_config.py — Black-Litterman 실험 정의
 """
 from pathlib import Path
 
+# ── 평가 기간 (Train/Test/Hold-out 분리, 2026-05-07 도입) ───────────────────
+# walk_forward 는 PRED_END 까지 수익률 시리즈 생성. 평가는 EVAL_PERIODS 단위로 분리.
+PRED_START = '2010-01-01'
+PRED_END   = '2025-12-31'    # 기존 2024-12-31 → 12 month hold-out 추가
+
+EVAL_PERIODS = {
+    'TEST'    : ('2010-01-01', '2023-12-31'),  # 168m, walk_forward training/calibration
+    'HOLD_OUT': ('2024-01-01', '2025-12-31'),  # 24m, 실전 운용 검증
+    'FULL'    : ('2010-01-01', '2025-12-31'),  # 192m, 보조 통합 비교
+}
+
 # ── LSTM 예측 파일 경로 ────────────────────────────────────────────────────────
 # 위치에 따라 자동 탐색. 없으면 LSTM 실험은 자동 스킵됨.
 _PHASE3_DIR = Path(__file__).parent / 'phase3(data_outputs)'
