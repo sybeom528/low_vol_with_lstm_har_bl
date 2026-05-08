@@ -114,6 +114,16 @@ REGIMES = [
 PERIODS_DEFAULT = {label: (s, e) for label, s, e in REGIMES}
 
 
+# ── 평가 기간 (Train/Test/Hold-out 분리, 2026-05-07 도입) ───────────────────
+# walk_forward 결과 (192m: 2010-01 ~ 2025-12) 를 TEST/HOLD_OUT 분리 평가.
+# bl_config.EVAL_PERIODS 와 동일.
+EVAL_PERIODS = {
+    'TEST'    : ('2010-01-01', '2023-12-31'),  # 168m, 학습/calibration
+    'HOLD_OUT': ('2024-01-01', '2025-12-31'),  # 24m, 실전 검증
+    'FULL'    : ('2010-01-01', '2025-12-31'),  # 192m, 보조 통합 비교
+}
+
+
 def _sharpe_subperiod(ret: pd.Series, rf: pd.Series, start: str, end: str) -> float:
     """서브기간 Sharpe 계산. 6개월 미만이면 NaN."""
     sub = ret[(ret.index >= start) & (ret.index <= end)]
@@ -125,15 +135,55 @@ def _sharpe_subperiod(ret: pd.Series, rf: pd.Series, start: str, end: str) -> fl
     return float(exc.mean() * 12 / vol) if vol > 0 else np.nan
 
 
+def _sortino_subperiod(ret: pd.Series, rf: pd.Series, start: str, end: str) -> float:
+    """서브기간 Sortino 계산 (하방편차 기반). 6개월 미만이면 NaN."""
+    sub = ret[(ret.index >= start) & (ret.index <= end)]
+    if len(sub) < 6:
+        return np.nan
+    rf_sub = rf.reindex(sub.index).fillna(0)
+    exc    = sub - rf_sub
+    down   = sub[sub < 0].std() * np.sqrt(12)
+    return float(exc.mean() * 12 / down) if (down and down > 0) else np.nan
+
+
+def _cagr_subperiod(ret: pd.Series, start: str, end: str) -> float:
+    """서브기간 CAGR (기하 복리). 6개월 미만이면 NaN."""
+    sub = ret[(ret.index >= start) & (ret.index <= end)]
+    if len(sub) < 6:
+        return np.nan
+    cum = (1 + sub).cumprod().iloc[-1]
+    return float(cum ** (12.0 / len(sub)) - 1) if cum > 0 else np.nan
+
+
+def _mdd_subperiod(ret: pd.Series, start: str, end: str) -> float:
+    """서브기간 MDD. 6개월 미만이면 NaN."""
+    sub = ret[(ret.index >= start) & (ret.index <= end)]
+    if len(sub) < 6:
+        return np.nan
+    cum = (1 + sub).cumprod()
+    return float((cum / cum.cummax() - 1).min())
+
+
 def build_master_table(
     results_dir,
     rf: pd.Series,
     spy_ret: pd.Series = None,
     periods: dict = None,
     min_months: int = 12,
+    eval_periods: dict = None,
+    sort_by: str = 'sortino',
 ) -> pd.DataFrame:
     """
     모든 results/*.pkl → DataFrame.
+
+    Parameters
+    ----------
+    eval_periods : dict | None
+      {label: (start, end)} 의 평가 기간. None 이면 EVAL_PERIODS (TEST/HOLD_OUT/FULL).
+      pkl 의 ret 시리즈가 192m (2025-12 까지) 인 경우만 의미 있음.
+    sort_by : str
+      반환 DataFrame 의 default 정렬 키. 'sortino' (기본, 사용자 요청), 'sharpe',
+      'sortino_TEST', 'sortino_HOLD_OUT', 'cagr' 등 컬럼명. None 이면 정렬 안 함.
 
     Returns
     -------
@@ -143,8 +193,11 @@ def build_master_table(
       성과(전체) : sharpe, sortino, cagr, vol, mdd, calmar, cvar_5, win_rate,
                    beta, alpha, mdd_duration
       포트폴리오 : turnover_avg, eff_n_avg, n_months
-      서브기간   : sharpe_<period> (periods 인자 있을 때)
+      서브기간   : sharpe_<regime>, sharpe_<eval_period>, sortino_<eval_period>,
+                   cagr_<eval_period>, mdd_<eval_period>
     """
+    if eval_periods is None:
+        eval_periods = EVAL_PERIODS
     results_dir = Path(results_dir)
     rows = []
 
@@ -188,21 +241,36 @@ def build_master_table(
                   'cvar_5', 'win_rate', 'beta', 'alpha', 'mdd_duration'):
             row[k] = m.get(k, np.nan)
 
-        # 서브기간 Sharpe
+        # 서브기간 Sharpe (regime, ex. R1/R2/R3)
         if periods:
             for label, (s, e) in periods.items():
                 row[f'sharpe_{label}'] = _sharpe_subperiod(ret, rf, s, e)
+
+        # 평가 기간별 Sharpe / Sortino / CAGR / MDD (TEST / HOLD_OUT / FULL, 2026-05-07)
+        for ep_label, (s, e) in eval_periods.items():
+            row[f'sharpe_{ep_label}']  = _sharpe_subperiod(ret, rf, s, e)
+            row[f'sortino_{ep_label}'] = _sortino_subperiod(ret, rf, s, e)
+            row[f'cagr_{ep_label}']    = _cagr_subperiod(ret, s, e)
+            row[f'mdd_{ep_label}']     = _mdd_subperiod(ret, s, e)
 
         rows.append(row)
 
     df = pd.DataFrame(rows)
 
-    # 컬럼 순서 정돈
+    # 컬럼 순서 정돈 — Sortino 우선 (사용자 요청, 2026-05-07)
     front = ['name', 'canonical', 'prior_s', 'p_s', 'pw_s', 'q_s', 'om_s',
-             'sharpe', 'sortino', 'cagr', 'vol', 'mdd', 'calmar',
+             'sortino', 'sharpe', 'cagr', 'vol', 'mdd', 'calmar',
+             'sortino_TEST', 'sortino_HOLD_OUT', 'sortino_FULL',
+             'sharpe_TEST', 'sharpe_HOLD_OUT', 'sharpe_FULL',
              'beta', 'alpha', 'turnover_avg', 'eff_n_avg', 'n_months']
     rest = [c for c in df.columns if c not in front]
-    return df[[c for c in front if c in df.columns] + rest]
+    df = df[[c for c in front if c in df.columns] + rest]
+
+    # 정렬 (default: sortino 내림차순)
+    if sort_by and sort_by in df.columns:
+        df = df.sort_values(sort_by, ascending=False, na_position='last').reset_index(drop=True)
+
+    return df
 
 
 def regime_metrics(ret: pd.Series, rf: pd.Series, start: str, end: str) -> dict:

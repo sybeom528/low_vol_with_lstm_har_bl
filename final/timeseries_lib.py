@@ -1,25 +1,30 @@
 """
 timeseries_lib.py — Phase 1.5 + Phase 3-2 핵심 함수 통합 (CS 제외)
 
-본 모듈은 시계열_Test 폴더의 1,754 + 14,125 라인 작업 산출물에서 재현에 필요한
-핵심 함수만 추출한 통합 모듈입니다. 03_Volatility_Forecasting.ipynb 와
-04_Statistical_Validation.ipynb 가 본 모듈을 import 하여 사용합니다.
+final/ 폴더의 표준 시계열·통계 함수 모듈. 03_Volatility_Forecasting.ipynb 와
+04_Statistical_Validation.ipynb, lstm_pipeline.py 가 본 모듈을 import 하여 사용합니다.
 
-추출 출처
----------
-- Phase1_5_Volatility/scripts/{models, train, dataset, targets_volatility,
-  baselines_volatility, metrics_volatility}.py
-- Phase3_Robust_Extensions/scripts/{volatility_ensemble, _run_2b_*}.py
+함수 카테고리
+-------------
+- 환경: setup_seeds, setup_korean_font
+- 타깃: build_log_rv_target, verify_no_leakage
+- Walk-Forward: walk_forward_folds, build_fold_inputs
+- LSTM v4: LSTMRegressor, train_one_fold, count_parameters
+- HAR-RV: fit_har_rv
+- Ensemble: diebold_pauly_weights, ensemble_predict
+- 평가: rmse, qlike, r2_train_mean, pred_std_ratio, mz_regression, dm_test
+- 통계: anova_variance_decomp, welch_anova, kruskal_wallis_eps_sq,
+        pairwise_mann_whitney, cohen_d, heavy_tail_stats
+- 보고: rmse_with_pct_summary, format_rmse_summary
 
 CS 제외
 -------
-Cross-Sectional (Ticker Embedding LSTM, models_cs.py) 는 분석 활용 X 이므로
-본 모듈에서 추출 X. 통합 대상 = Stockwise (per-ticker LSTM) + HAR-RV +
-Diebold-Pauly Performance-Weighted Ensemble 만.
+Cross-Sectional (Ticker Embedding LSTM) 는 본 모듈에서 추출 X. 통합 대상 =
+Stockwise (per-ticker LSTM) + HAR-RV + Diebold-Pauly Performance-Weighted Ensemble.
 
 사용 예
 -------
->>> from final import timeseries_lib as tlib
+>>> import timeseries_lib as tlib
 >>> tlib.setup_seeds(42)
 >>> rmse_val = tlib.rmse(y_true, y_pred)
 
@@ -428,12 +433,87 @@ def ensemble_predict(y_pred_lstm: np.ndarray, y_pred_har: np.ndarray,
 # ══════════════════════════════════════════════════════════════════
 
 def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """Root Mean Squared Error."""
+    """Root Mean Squared Error (학술 표준 metric, log-RV 공간).
+
+    Patton 2011 표준을 따라 log(σ) 공간에서 계산. 변동성의 heteroskedastic 성질을
+    log 변환으로 정규화하므로, η²/Welch F/KW H 등 학술 비교에 적합.
+
+    발표용 친숙한 % 표기가 필요하면 :func:`rmse_with_pct_summary` 를 참고.
+    """
     y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
     mask = np.isfinite(y_true) & np.isfinite(y_pred)
     if mask.sum() == 0:
         return float('nan')
     return float(np.sqrt(np.mean((y_true[mask] - y_pred[mask]) ** 2)))
+
+
+def rmse_with_pct_summary(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+    """log RMSE + 발표용 % 보조 표기 반환 (Option A, 의미 보존).
+
+    학술 표준 (log-RV 공간) 의 RMSE 본값을 그대로 보존하되,
+    발표·대시보드용 친숙한 % 표기를 함께 반환.
+
+    반환 dict:
+      rmse_log         : float — log 공간 RMSE (의사결정·학술 비교 기준)
+      mean_sigma_pct   : float — 평균 σ 예측치 (%/일), exp(y_pred).mean() × 100
+      median_sigma_pct : float — 중앙값 σ 예측치 (%/일)
+      max_sigma_pct    : float — 최대 σ 예측치 (%/일)
+      rel_error_approx : float — log RMSE × 100 (Taylor 1차 근사 ± % 상대오차)
+      n                : int   — 유효 sample 수
+
+    발표 예시:
+      avg log-RMSE = 0.2934 (학술 표준 metric)
+        └ 평균 일별 σ ≈ 1.62%/일 (보조 표기)
+        └ 상대오차 근사 ≈ ±29.34% (Taylor 1차)
+
+    중요:
+      - log RMSE 와 % 공간 RMSE 는 다른 metric. 의사결정·학술 비교는 log RMSE 사용.
+      - σ_pct 는 단순 시각화·발표용 보조 표기.
+    """
+    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
+    mask = np.isfinite(y_true) & np.isfinite(y_pred)
+    n_valid = int(mask.sum())
+    if n_valid == 0:
+        return {
+            'rmse_log': float('nan'),
+            'mean_sigma_pct': float('nan'),
+            'median_sigma_pct': float('nan'),
+            'max_sigma_pct': float('nan'),
+            'rel_error_approx': float('nan'),
+            'n': 0,
+        }
+    yt, yp = y_true[mask], y_pred[mask]
+    rmse_log = float(np.sqrt(np.mean((yt - yp) ** 2)))
+    sigma_pred = np.exp(yp) * 100.0   # log(σ_daily) → σ_daily(%)
+    return {
+        'rmse_log'        : rmse_log,
+        'mean_sigma_pct'  : float(np.mean(sigma_pred)),
+        'median_sigma_pct': float(np.median(sigma_pred)),
+        'max_sigma_pct'   : float(np.max(sigma_pred)),
+        'rel_error_approx': rmse_log * 100.0,
+        'n'               : n_valid,
+    }
+
+
+def format_rmse_summary(summary: dict, title: str = '') -> str:
+    """rmse_with_pct_summary() 결과를 발표용 multi-line 문자열로 포맷.
+
+    예시 출력:
+      avg log-RMSE = 0.2934   (학술 표준)
+        └ 평균 σ ≈ 1.62%/일   (보조 표기)
+        └ 상대오차 ≈ ±29.34%  (Taylor 근사)
+    """
+    if not np.isfinite(summary.get('rmse_log', np.nan)):
+        return f'{title}: 데이터 없음'
+    lines = []
+    if title:
+        lines.append(f'{title}')
+    lines.append(f'  log-RMSE         = {summary["rmse_log"]:.4f}   (학술 표준 metric)')
+    lines.append(f'    └ 평균 σ      ≈ {summary["mean_sigma_pct"]:.2f}%/일   (보조 표기)')
+    lines.append(f'    └ 중앙값 σ    ≈ {summary["median_sigma_pct"]:.2f}%/일')
+    lines.append(f'    └ 상대오차    ≈ ±{summary["rel_error_approx"]:.2f}%   (Taylor 근사)')
+    lines.append(f'    └ N           = {summary["n"]:,}')
+    return '\n'.join(lines)
 
 
 def qlike(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -746,8 +826,7 @@ def assert_close(actual: float, expected: float, tol: float = 0.005,
 def assert_phase15_results(metrics: Dict) -> None:
     """Phase 1.5 v8 ensemble 핵심 수치 검증.
 
-    예상값 (시계열_Test 의 ensemble_predictions_stockwise.csv 기준):
-        - 615 종목 stockwise 환경
+    Snapshot 기준 (5월 초 panel cutoff 시점의 615 종목 stockwise 학습 결과):
         - LSTM avg RMSE ≈ 0.4298
         - HAR avg RMSE ≈ 0.3922
         - Ensemble avg RMSE ≈ 0.3815
