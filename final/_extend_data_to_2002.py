@@ -29,10 +29,15 @@ _extend_data_to_2002.py — daily_returns + vix 를 2002-01 부터 보강.
 """
 from __future__ import annotations
 
+import io
 import shutil
 import sys
 import time
 from pathlib import Path
+
+# Windows cp949 encoding 우회 — 한글 print 정상 동작 (em dash, 화살표 등 unicode)
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 import numpy as np
 import pandas as pd
