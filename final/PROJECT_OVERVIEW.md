@@ -14,7 +14,7 @@
 3. LSTM σ 예측           ✅ phase3(data_outputs)/         (다른 팀원 영역)
 4. Black-Litterman       ✅ 99_run.ipynb (walk_forward)
 5. MVO + 위험성향 매핑    🟡 99_analyze.ipynb (분석 진행 중)
-6. 5-/3-레짐 안정성       ✅ 99_analyze.ipynb K1~K7
+6. 3-레짐 안정성 + 민감도  ✅ 99_analyze.ipynb (I/J/K/L/M/N)
 7. Streamlit 대시보드     ❌ 미착수
 ```
 
@@ -25,7 +25,8 @@
 ```
 final/
 ├── 99_run.ipynb              ← walk_forward 실행 → results/*.pkl
-├── 99_analyze.ipynb          ← 분석 (J1-J6, K1-K7)
+├── 99_analyze.ipynb          ← 분석 (K_CUT → I → J → K → L → M → N)
+├── 99_slot_effects.ipynb     ← 슬롯 차원 효과 라인플롯 (pivot CSV 자동 생성)
 ├── 01_DataCollection.ipynb   ← 데이터 수집
 ├── 02_LowRiskAnomaly.ipynb   ← anomaly EDA
 │

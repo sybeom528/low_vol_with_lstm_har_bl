@@ -20,7 +20,8 @@ final/
 ├── analyze_plots.py          ← 시각화 모듈
 │
 ├── 99_run.ipynb              ← walk_forward 실행 → results/*.pkl
-├── 99_analyze.ipynb          ← 24-cell 분석 (J1~J6, K1~K6, K2-H)
+├── 99_analyze.ipynb          ← 분석 단일 진입점 (K_CUT → I → J → K → L → M → N)
+├── 99_slot_effects.ipynb     ← 슬롯 차원 효과 라인플롯 (pivot CSV 자동 생성)
 │
 ├── results/                  ← 214 pkl
 ├── data/                     ← monthly_panel.csv, daily_returns.pkl, ff3_monthly.csv
@@ -42,7 +43,9 @@ final/
    cell-04 : walk_forward(cfg) 함수 정의
    cell-05 : run_list = 미생성 실험만 → 자동 스킵
    cell-06 : 빠른 성과 확인
-③ 99_analyze.ipynb 실행 (Cell 1 → J1 → K1 순)
+③ 99_analyze.ipynb 실행 (Setup → K_CUT → I → J → K → L → M → N 순서대로)
+   ※ K_CUT은 mandatory pre-step. 모든 후속 분석은 2023-12-31 cutoff 기준.
+④ (선택) 99_slot_effects.ipynb 실행 — 슬롯 차원 효과 라인플롯
 ```
 
 > **자동 스킵**: `(RESULTS_DIR / f'{cfg["name"]}.pkl').exists()` → 이미 있으면 스킵.
