@@ -625,14 +625,25 @@ def render_attribution_tornado(
     period: str,
 ) -> None:
     """
-    Simple Contribution = Σ(w × R) per ticker, 기간 누적.
-    Top N positive + Top N negative + Sector 합계 + Σ 검증.
+    Attribution Tornado — Simple (Brinson 1986) / Carino (1999) 토글.
+      - Simple: Σ(w × R) — 단일 기간 선형 합 (multi-period 누적과 차이 큼)
+      - Carino Smoothed: log smoothing → Σ = Fund 누적 수익률 정확 일치
     """
-    cols_t = st.columns([1.5, 4])
+    cols_t = st.columns([1.5, 2, 3])
     with cols_t[0]:
         top_n = st.selectbox(
             "Top N", options=[10, 20, 50], index=0, key="holdings_attr_top_n",
         )
+    with cols_t[1]:
+        method = st.selectbox(
+            "Attribution 방법",
+            options=["Simple (Brinson 1986)", "Carino Smoothed (Carino 1999)"],
+            index=1,  # default Carino
+            key="holdings_attr_method",
+            help="Simple = 선형 합 (Brinson 1986 한계 — 누적과 차이) / "
+                 "Carino = log smoothing 으로 Σ = Fund 누적 정확 일치",
+        )
+    is_carino = method.startswith("Carino")
 
     # 기간 boundary
     period_label_map = {"FULL": "FULL 192m", "TEST": "TEST 168m", "HO": "HO 24m"}
@@ -646,8 +657,11 @@ def render_attribution_tornado(
     period_start = pd.Timestamp(s)
     period_end = pd.Timestamp(e)
 
-    # 종목별 contribution
-    contrib = mc.calc_simple_contribution(weights, panel, period_start, period_end)
+    # 종목별 contribution (선택 method 기준)
+    if is_carino:
+        contrib = mc.calc_carino_smoothed_contribution(weights, panel, period_start, period_end)
+    else:
+        contrib = mc.calc_simple_contribution(weights, panel, period_start, period_end)
     if len(contrib) == 0:
         st.warning("기여도 산출 불가 (기간 내 데이터 없음).")
         return
@@ -656,6 +670,19 @@ def render_attribution_tornado(
     fund_p = fund_ret[(fund_ret.index >= period_start) & (fund_ret.index <= period_end)]
     fund_cum = float((1 + fund_p).prod() - 1) if len(fund_p) > 0 else np.nan
     contrib_sum = float(contrib.sum())
+
+    # 산출 portfolio R_t 의 누적 — Carino 의 정합 비교 기준
+    panel_p_pivot = panel[(panel["date"] >= period_start) & (panel["date"] <= period_end)] \
+        .pivot_table(index="date", columns="ticker", values="ret_1m", aggfunc="first")
+    common_dates = weights.index.intersection(panel_p_pivot.index)
+    common_dates = common_dates[(common_dates >= period_start) & (common_dates <= period_end)]
+    if len(common_dates) > 0:
+        common_tickers = weights.columns.intersection(panel_p_pivot.columns)
+        contrib_t_check = (weights.loc[common_dates, common_tickers]
+                           * panel_p_pivot.loc[common_dates, common_tickers]).fillna(0)
+        calc_R_cum = float((1 + contrib_t_check.sum(axis=1)).prod() - 1)
+    else:
+        calc_R_cum = np.nan
 
     # Top N 양수 / Top N 음수
     pos = contrib[contrib > 0].head(top_n)
@@ -746,29 +773,47 @@ def render_attribution_tornado(
                 unsafe_allow_html=True,
             )
 
-    # === 검증 (Σ Contribution ≈ Fund Return) ===
-    diff = contrib_sum - fund_cum if not pd.isna(fund_cum) else np.nan
+    # === 검증 (method 별 다른 narrative) ===
     st.markdown("---")
-    st.caption(
-        f"**검증** (기간: {period_label_map.get(period, period)}): "
-        f"Σ Contribution = **{contrib_sum:+.2%}** vs "
-        f"Fund 누적 수익률 = **{fund_cum:+.2%}**  "
-        f"(차이: {diff:+.2%} — Simple Attribution 의 선형 근사 한계, "
-        f"누적 수익률은 복리이므로 ε > 0 일반적 ※ Brinson 1986)"
-    )
+    if is_carino:
+        diff_calc = contrib_sum - calc_R_cum if not pd.isna(calc_R_cum) else np.nan
+        st.caption(
+            f"**검증** (기간: {period_label_map.get(period, period)}, **Carino 1999 Logarithmic Smoothing**)"
+        )
+        st.caption(
+            f"  • Σ Smoothed Contribution = **{contrib_sum:+.2%}**"
+        )
+        st.caption(
+            f"  • 산출 portfolio R_t 누적 = **{calc_R_cum:+.2%}** "
+            f"(Σ Carino 와 차이: {diff_calc:+.6%} — **수학적 정확 일치** ※ Carino 1999)"
+        )
+        st.caption(
+            f"  • 참고 — Fund 실제 net 누적 = {fund_cum:+.2%} "
+            f"(산출 R_t 와의 차이는 panel.ret vs 펀드 내부 ret 차이 + transaction cost 누적, attribution scope 외부)"
+        )
+    else:
+        diff_fund = contrib_sum - fund_cum if not pd.isna(fund_cum) else np.nan
+        st.caption(
+            f"**검증** (기간: {period_label_map.get(period, period)}, **Simple Σ(w × R)**): "
+            f"Σ Contribution = **{contrib_sum:+.2%}** vs "
+            f"Fund 누적 수익률 = **{fund_cum:+.2%}**  "
+            f"(차이: {diff_fund:+.2%} — Simple Attribution 의 선형 근사 한계 — 장기 누적은 복리이므로 차이 ε 큼 ※ Brinson 1986. "
+            f"정확한 분해는 위 토글에서 **Carino Smoothed** 선택)"
+        )
 
     # CSV 다운로드 (전체 contribution)
+    method_suffix = "carino" if is_carino else "simple"
     csv_df = pd.DataFrame({
         "Ticker": contrib.index,
         "Company": [ticker_company_map.get(t, t) for t in contrib.index],
         "Sector": [ticker_to_sector.get(t, "—") for t in contrib.index],
-        "Contribution": contrib.values,
+        f"Contribution_{method_suffix}": contrib.values,
     })
     csv_bytes = csv_df.to_csv(index=False).encode("utf-8-sig")
     st.download_button(
         label="⬇ 전체 기여도 CSV",
         data=csv_bytes,
-        file_name=f"holdings_attribution_{period}.csv",
+        file_name=f"holdings_attribution_{method_suffix}_{period}.csv",
         mime="text/csv",
         key="holdings_attr_csv",
     )

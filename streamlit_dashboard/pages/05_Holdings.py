@@ -143,10 +143,11 @@ st.divider()
 # === 영역 8: 종목별 기여도 분석 (Tornado) =============================
 st.subheader(f"종목별 기여도 분석 — {period}")
 st.caption(
-    "Simple Contribution = Σ(w × R) per ticker (Brinson et al. 1986). "
+    "**Attribution 방법 토글** — Simple (Brinson 1986) / Carino Smoothed (Carino 1999). "
+    "Simple = Σ(w × R) 단일 기간 선형 합 (장기 누적과 차이 큼). "
+    "Carino = log smoothing 으로 Σ = 산출 portfolio R_t 누적 정확 일치 (multi-period linking 학술 표준). "
     "Top N 양수 + Top N 음수 (학술 정직 — Bottom contributors 도 노출). "
-    "Sector 합계 = Sector Watch 페이지로 navigation. "
-    "검증: Σ Contribution ≈ Fund 누적 수익률 (선형 근사 한계 ε)."
+    "Sector 합계 = Sector Watch 페이지로 navigation."
 )
 render_attribution_tornado(weights, panel, universe, ticker_company_map, fund_ret, period)
 

@@ -971,6 +971,76 @@ def calc_holdings_kpi_period_avg(
     return out
 
 
+def calc_carino_smoothed_contribution(
+    weights: pd.DataFrame,
+    panel: pd.DataFrame,
+    period_start: pd.Timestamp,
+    period_end: pd.Timestamp,
+) -> pd.Series:
+    """
+    Carino (1999) Logarithmic Smoothing — 종목별 누적 기여도.
+    Σ smoothed contribution = portfolio 누적 수익률 (정확 일치).
+
+    학술 출처:
+      - Carino, D. (1999) "Combining attribution effects over time"
+        Journal of Performance Measurement.
+      - Brinson Simple Attribution 의 multi-period linking 한계 해결 표준 방법.
+
+    수식:
+      1. per-period contribution: C_{i,t} = w_{i,t} × R_{i,t}
+      2. portfolio per-period return: R_t = Σ_i C_{i,t}
+      3. Carino factor: k_t = ln(1+R_t) / R_t   (R_t≠0; 0 시 lim → 1)
+      4. 정규화: K = ln(1+R_cum) / R_cum, R_cum = ∏(1+R_t) - 1
+      5. smoothed: C_i = Σ_t (k_t / K) × C_{i,t}
+
+    검증: Σ smoothed C_i = R_cum (Brinson Σ 의 누적 환산)
+
+    Returns:
+        pd.Series (index=ticker, value=smoothed cumulative contribution, 내림차순)
+    """
+    weights_p = weights[(weights.index >= period_start) & (weights.index <= period_end)]
+    if len(weights_p) == 0:
+        return pd.Series(dtype=float)
+
+    panel_p = panel[(panel["date"] >= period_start) & (panel["date"] <= period_end)]
+    panel_pivot = panel_p.pivot_table(
+        index="date", columns="ticker", values="ret_1m", aggfunc="first"
+    )
+
+    common_dates = weights_p.index.intersection(panel_pivot.index)
+    if len(common_dates) == 0:
+        return pd.Series(dtype=float)
+
+    weights_a = weights_p.loc[common_dates]
+    rets_a = panel_pivot.loc[common_dates]
+
+    common_tickers = weights_a.columns.intersection(rets_a.columns)
+    weights_a = weights_a[common_tickers].fillna(0)
+    rets_a = rets_a[common_tickers].fillna(0)
+
+    # per-period × per-ticker contribution
+    contrib_t = weights_a * rets_a   # DataFrame (date × ticker)
+
+    # portfolio per-period return (산출된 contribution 합 = 펀드 추정 R_t)
+    R_t = contrib_t.sum(axis=1)
+
+    # Carino factor per period — k_t = ln(1+R_t)/R_t, R_t=0 시 lim = 1
+    with np.errstate(divide="ignore", invalid="ignore"):
+        k_t = np.where(R_t.abs() > 1e-12, np.log(1 + R_t) / R_t, 1.0)
+    k_t = pd.Series(k_t, index=R_t.index)
+
+    # 정규화 상수 — K = ln(1+R_cum) / R_cum
+    R_cum = float((1 + R_t).prod() - 1)
+    if abs(R_cum) < 1e-12:
+        return pd.Series(0.0, index=common_tickers)
+    K = float(np.log(1 + R_cum) / R_cum)
+
+    # smoothed C_i = Σ_t (k_t / K) × C_{i,t}
+    smoothed = contrib_t.mul(k_t / K, axis=0).sum(axis=0)
+
+    return smoothed.sort_values(ascending=False)
+
+
 def calc_simple_contribution(
     weights: pd.DataFrame,
     panel: pd.DataFrame,
