@@ -123,15 +123,33 @@ def load_sp500_membership() -> dict:
 # === 펀드 결과 ========================================================
 
 @st.cache_data
-def load_fund_results(config_name: str = "mat_eq_eq_raw_pap") -> dict:
+def load_fund_results(config_name: str = "mat_eq_mcap_raw_rms") -> dict:
     """
-    펀드 backtest 결과 (Top 1 = mat_eq_eq_raw_pap).
+    펀드 backtest 결과 (최종 Top 1 = mat_eq_mcap_raw_rms).
 
-    pkl 구조 (예상):
-      {"weights": pd.DataFrame, "returns": pd.Series, "dates": ..., ...}
+    config 차원: prior=capm_eq / p_weight=mcap / q_mode=raw_lam / omega_mode=rmse
+    선정 근거: turnover 안정성 (~0.43, mat_eq_eq_raw_pap 의 0.99 대비 절반)
+              + Sharpe 1.05 / MDD -13.9% — 운용 안정성 + 학술 narrative 균형
+
+    대시보드 사본 (Top 1) 우선, 없으면 final 원본 fallback.
+
+    pkl 구조: {"weights": DataFrame, "ret": Series, "spy_ret": Series,
+              "comp": DataFrame, "config": dict, "meta": DataFrame, ...}
     """
-    with open(RESULTS_DIR / f"{config_name}.pkl", "rb") as f:
-        return pickle.load(f)
+    local = RESULTS_DIR / f"{config_name}.pkl"
+    if local.exists():
+        with open(local, "rb") as f:
+            return pickle.load(f)
+
+    original = ORIGINAL_RESULTS_DIR / f"{config_name}.pkl"
+    if original.exists():
+        with open(original, "rb") as f:
+            return pickle.load(f)
+
+    raise FileNotFoundError(
+        f"Config '{config_name}' pkl 을 찾을 수 없습니다.\n"
+        f"  확인한 경로:\n  - {local}\n  - {original}"
+    )
 
 
 @st.cache_data
