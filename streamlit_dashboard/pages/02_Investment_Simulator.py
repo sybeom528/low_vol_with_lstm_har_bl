@@ -38,7 +38,7 @@ from lib.page_helpers import (
     render_subheader,
 )
 from lib.simulator import (
-    compute_benchmark_cagr,
+    simulate_benchmark,
     simulate_dca,
     simulate_goal_based,
     simulate_lump_sum,
@@ -108,12 +108,13 @@ else:  # goal
 st.subheader("시뮬레이션 결과")
 if scenario == "goal":
     req = result.get("required_initial")
-    achievement = result.get("goal_achievement_date") or "기간 내 미달성 ($10K 기준)"
+    period_years = (end_date - start_date).days / 365.25
     st.info(
-        f"🎯 **Goal 역산 결과**: 목표 ${result['goal_amount']:,.0f} 달성을 위한 "
-        f"필요 초기 투자금 = **${req:,.0f}** "
-        f"(이 금액으로 시작 시 종료 시점에 정확히 ${result['goal_amount']:,.0f} 도달). "
-        f"\n\n📅 **참고**: 초기 $10,000 기준 목표 도달 시점 = **{achievement}**"
+        f"🎯 **Goal 역산 결과** — 목표 \\${result['goal_amount']:,.0f} 달성을 위한 "
+        f"필요 초기 투자금 = **\\${req:,.0f}**\n\n"
+        f"이 금액으로 시작 시 {period_years:.1f}년 후 종료 시점에 정확히 "
+        f"\\${result['goal_amount']:,.0f} 도달. "
+        f"펀드의 누적 factor = **{result['goal_amount'] / req:.2f}배**."
     )
 render_kpi_section(result)
 st.divider()
@@ -129,21 +130,28 @@ st.caption(
     "Y축 Linear/Log 토글 + 기간 슬라이더 가능."
 )
 
-# 활성 벤치마크만 산출
+# 활성 벤치마크만 산출 — Fund 와 동일 시나리오 (DCA 시 매월 추가 동일 적용)
+bench_kwargs = dict(
+    scenario=scenario,
+    start_date=start_date,
+    end_date=end_date,
+    initial_amount=initial_amount_for_curve,
+    monthly_amount=sim_input.get("monthly_amount", 0) if scenario == "dca" else 0,
+)
 benchmarks: dict = {}
 if st.session_state.get("show_spy", True):
-    benchmarks["SPY"] = compute_benchmark_cagr(fund_spy, start_date, end_date)
+    benchmarks["SPY"] = simulate_benchmark(fund_spy, **bench_kwargs)
 if st.session_state.get("show_ew", False) or st.session_state.get("show_ivw", False):
     panel = load_monthly_panel()
     sp_mem = load_sp500_membership()
     if st.session_state.get("show_ew", False):
         with st.spinner("EW baseline 산출 중..."):
             ew_ret = compute_equal_weight_returns(panel, sp_mem, fund_ret.index)
-        benchmarks["EW"] = compute_benchmark_cagr(ew_ret, start_date, end_date)
+        benchmarks["EW"] = simulate_benchmark(ew_ret, **bench_kwargs)
     if st.session_state.get("show_ivw", False):
         with st.spinner("IVW baseline 산출 중..."):
             ivw_ret = compute_ivw_returns(panel, sp_mem, fund_ret.index)
-        benchmarks["IVW"] = compute_benchmark_cagr(ivw_ret, start_date, end_date)
+        benchmarks["IVW"] = simulate_benchmark(ivw_ret, **bench_kwargs)
 
 render_cumulative_curve(result, benchmarks, initial_amount_for_curve)
 st.divider()

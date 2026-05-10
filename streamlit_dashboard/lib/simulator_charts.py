@@ -43,121 +43,123 @@ def render_input_section() -> dict:
     DATA_MIN = pd.Timestamp("2010-01-31")
     DATA_MAX = pd.Timestamp("2025-12-31")
 
-    tabs = st.tabs(["💵 Lump-sum (일시 투자)", "🔄 DCA (분산 투자)", "🎯 Goal-based (목표 역산)"])
-    sim_input: dict = {}
+    # === Number ↔ Slider 양방향 동기화 helper ===
+    def _ensure_state(key: str, default: int) -> None:
+        if key not in st.session_state:
+            st.session_state[key] = default
 
-    # === Lump-sum ===
-    with tabs[0]:
-        st.caption("일시 투자 — 시작 시점에 한 번 투자하고 종료 시점까지 보유.")
-        c1, c2 = st.columns(2)
-        with c1:
-            start_l = st.date_input(
-                "시작 시점", value=pd.Timestamp("2015-01-31").date(),
-                min_value=DATA_MIN.date(), max_value=DATA_MAX.date(),
-                key="sim_lump_start",
-            )
-        with c2:
-            end_l = st.date_input(
-                "종료 시점", value=DATA_MAX.date(),
-                min_value=DATA_MIN.date(), max_value=DATA_MAX.date(),
-                key="sim_lump_end",
-            )
-        initial_l = st.number_input(
-            "초기 금액 ($)",
-            min_value=100, max_value=1_000_000,
-            value=10_000, step=1_000,
-            key="sim_lump_initial",
-        )
-        st.slider(
-            "초기 금액 슬라이더",
-            min_value=100, max_value=1_000_000,
-            value=int(initial_l), step=1_000,
-            key="sim_lump_initial_slider",
-            label_visibility="collapsed",
-        )
+    def _bind(num_key: str, slider_key: str, default: int):
+        """number_input 과 slider 가 같은 logical 값 공유 — on_change callback 양방향."""
+        _ensure_state(num_key, default)
+        _ensure_state(slider_key, default)
 
-    # === DCA ===
-    with tabs[1]:
-        st.caption("Dollar Cost Averaging — 매월 일정 금액 추가 투자 (Constantinides 1979).")
-        c1, c2 = st.columns(2)
-        with c1:
-            start_d = st.date_input(
-                "시작 시점", value=pd.Timestamp("2015-01-31").date(),
-                min_value=DATA_MIN.date(), max_value=DATA_MAX.date(),
-                key="sim_dca_start",
-            )
-        with c2:
-            end_d = st.date_input(
-                "종료 시점", value=DATA_MAX.date(),
-                min_value=DATA_MIN.date(), max_value=DATA_MAX.date(),
-                key="sim_dca_end",
-            )
-        c3, c4 = st.columns(2)
-        with c3:
-            initial_d = st.number_input(
-                "초기 금액 ($)", min_value=0, max_value=1_000_000,
-                value=10_000, step=1_000, key="sim_dca_initial",
-            )
-        with c4:
-            monthly_d = st.number_input(
-                "매월 추가 ($)", min_value=0, max_value=100_000,
-                value=500, step=100, key="sim_dca_monthly",
-            )
+        def _from_num():
+            st.session_state[slider_key] = st.session_state[num_key]
 
-    # === Goal ===
-    with tabs[2]:
-        st.caption("Goal-based 역산 — 시작/종료 + 목표 금액 → 필요 초기 투자 금액.")
-        c1, c2 = st.columns(2)
-        with c1:
-            start_g = st.date_input(
-                "시작 시점", value=pd.Timestamp("2015-01-31").date(),
-                min_value=DATA_MIN.date(), max_value=DATA_MAX.date(),
-                key="sim_goal_start",
-            )
-        with c2:
-            end_g = st.date_input(
-                "종료 시점", value=DATA_MAX.date(),
-                min_value=DATA_MIN.date(), max_value=DATA_MAX.date(),
-                key="sim_goal_end",
-            )
-        goal_g = st.number_input(
-            "목표 금액 ($)", min_value=10_000, max_value=10_000_000,
-            value=1_000_000, step=10_000, key="sim_goal_amount",
-        )
+        def _from_slider():
+            st.session_state[num_key] = st.session_state[slider_key]
 
-    # 활성 Tab 감지 — st.tabs 자체는 활성 탭을 반환하지 않으므로
-    # session_state radio 추가 (모든 시나리오 동시 산출 → 가장 최근 변경 우선)
-    # 단순화: 사용자가 명시적으로 선택할 수 있도록 selectbox 추가
+        return _from_num, _from_slider
+
+    # === 시나리오 단일 selector (radio) — Tab 제거 (UI 단일화) ===
     scenario = st.radio(
         "시나리오 선택",
         options=["lump_sum", "dca", "goal"],
-        format_func=lambda s: {"lump_sum": "💵 Lump-sum", "dca": "🔄 DCA", "goal": "🎯 Goal-based"}[s],
+        format_func=lambda s: {
+            "lump_sum": "💵 Lump-sum (일시 투자)",
+            "dca": "🔄 DCA (분산 투자)",
+            "goal": "🎯 Goal-based (목표 역산)",
+        }[s],
         horizontal=True,
         key="sim_scenario",
     )
 
+    # 시나리오별 caption
     if scenario == "lump_sum":
-        sim_input = {
-            "scenario": "lump_sum",
-            "start_date": pd.Timestamp(start_l),
-            "end_date": pd.Timestamp(end_l),
-            "initial_amount": float(initial_l),
-        }
+        st.caption("일시 투자 — 시작 시점에 한 번 투자하고 종료 시점까지 보유.")
     elif scenario == "dca":
-        sim_input = {
-            "scenario": "dca",
-            "start_date": pd.Timestamp(start_d),
-            "end_date": pd.Timestamp(end_d),
-            "initial_amount": float(initial_d),
-            "monthly_amount": float(monthly_d),
-        }
+        st.caption("Dollar Cost Averaging — 매월 일정 금액 추가 투자 (Constantinides 1979).")
     else:
-        sim_input = {
-            "scenario": "goal",
-            "start_date": pd.Timestamp(start_g),
-            "end_date": pd.Timestamp(end_g),
-            "goal_amount": float(goal_g),
-        }
+        st.caption("Goal-based 역산 — 시작/종료 + 목표 금액 → 필요 초기 투자 금액.")
+
+    # 공통: 시작 / 종료 시점
+    c1, c2 = st.columns(2)
+    with c1:
+        start_date = st.date_input(
+            "시작 시점", value=pd.Timestamp("2015-01-31").date(),
+            min_value=DATA_MIN.date(), max_value=DATA_MAX.date(),
+            key="sim_start_date",
+        )
+    with c2:
+        end_date = st.date_input(
+            "종료 시점", value=DATA_MAX.date(),
+            min_value=DATA_MIN.date(), max_value=DATA_MAX.date(),
+            key="sim_end_date",
+        )
+
+    sim_input: dict = {
+        "scenario": scenario,
+        "start_date": pd.Timestamp(start_date),
+        "end_date": pd.Timestamp(end_date),
+    }
+
+    # 시나리오별 입력 필드 (조건부 렌더링)
+    if scenario == "lump_sum":
+        on_num, on_slider = _bind("sim_lump_initial", "sim_lump_initial_slider", 10_000)
+        st.number_input(
+            "초기 금액 ($)", min_value=100, max_value=1_000_000, step=1_000,
+            key="sim_lump_initial", on_change=on_num,
+        )
+        st.slider(
+            "초기 금액 슬라이더",
+            min_value=100, max_value=1_000_000, step=1_000,
+            key="sim_lump_initial_slider", on_change=on_slider,
+            label_visibility="collapsed",
+        )
+        sim_input["initial_amount"] = float(st.session_state.sim_lump_initial)
+
+    elif scenario == "dca":
+        # 초기 금액
+        on_num_di, on_slider_di = _bind("sim_dca_initial", "sim_dca_initial_slider", 10_000)
+        st.number_input(
+            "초기 금액 ($)", min_value=0, max_value=1_000_000, step=1_000,
+            key="sim_dca_initial", on_change=on_num_di,
+        )
+        st.slider(
+            "초기 금액 슬라이더",
+            min_value=0, max_value=1_000_000, step=1_000,
+            key="sim_dca_initial_slider", on_change=on_slider_di,
+            label_visibility="collapsed",
+        )
+        # 매월 추가
+        on_num_dm, on_slider_dm = _bind("sim_dca_monthly", "sim_dca_monthly_slider", 500)
+        st.number_input(
+            "매월 추가 ($)", min_value=0, max_value=100_000, step=100,
+            key="sim_dca_monthly", on_change=on_num_dm,
+        )
+        st.slider(
+            "매월 추가 슬라이더",
+            min_value=0, max_value=100_000, step=100,
+            key="sim_dca_monthly_slider", on_change=on_slider_dm,
+            label_visibility="collapsed",
+        )
+        sim_input["initial_amount"] = float(st.session_state.sim_dca_initial)
+        sim_input["monthly_amount"] = float(st.session_state.sim_dca_monthly)
+
+    else:  # goal
+        on_num_g, on_slider_g = _bind("sim_goal_amount", "sim_goal_amount_slider", 1_000_000)
+        st.number_input(
+            "목표 금액 ($)", min_value=10_000, max_value=10_000_000, step=10_000,
+            key="sim_goal_amount", on_change=on_num_g,
+        )
+        st.slider(
+            "목표 금액 슬라이더",
+            min_value=10_000, max_value=10_000_000, step=10_000,
+            key="sim_goal_amount_slider", on_change=on_slider_g,
+            label_visibility="collapsed",
+        )
+        sim_input["goal_amount"] = float(st.session_state.sim_goal_amount)
+
     return sim_input
 
 
@@ -250,15 +252,13 @@ def render_cumulative_curve(
             hovertemplate="%{x|%Y-%m}<br>총 투자: $%{y:,.0f}<extra></extra>",
         ))
 
-    # 벤치마크 라인 (Fund 와 동일 시작 금액 normalize)
+    # 벤치마크 라인 — simulate_benchmark 결과 (이미 dollar value, Fund 와 동일 시나리오)
     for name, bench_data in benchmarks.items():
         bench_value = bench_data.get("value_series")
         if bench_value is None or len(bench_value) == 0:
             continue
-        # initial_amount × cumulative — Fund 동일 scale (원금 비교)
-        bench_scaled = float(initial_amount) * bench_value
         fig.add_trace(go.Scatter(
-            x=bench_scaled.index, y=bench_scaled.values,
+            x=bench_value.index, y=bench_value.values,
             name=name,
             mode="lines",
             line=dict(color=BENCHMARK_COLORS.get(name, COLORS["text_muted"]), width=1.5),

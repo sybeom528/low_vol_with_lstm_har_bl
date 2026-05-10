@@ -222,12 +222,34 @@ def simulate_goal_based(
     return sim
 
 
-def compute_benchmark_cagr(
+def simulate_benchmark(
     bench_ret: pd.Series,
+    scenario: str,
     start_date: pd.Timestamp,
     end_date: pd.Timestamp,
+    initial_amount: float = 10_000,
+    monthly_amount: float = 0,
 ) -> dict:
-    """벤치마크 (SPY/EW/IVW) 의 기간 CAGR + value 시계열 (initial=1)."""
+    """
+    벤치마크 (SPY/EW/IVW) 의 시나리오별 시뮬레이션 — Fund 와 동일 전략 적용.
+
+    DCA 시나리오에서 Fund 만 매월 추가 매수하고 SPY 는 lump-sum 가정하면
+    비대칭 비교 → 본 함수로 SPY 도 동일 DCA 적용 (정확한 비교).
+
+    Goal 시나리오: 역산은 Fund 만 적용. SPY 는 동일 initial 로 lump-sum.
+
+    Returns:
+        dict {scenario, total_invested, final_value, cagr, value_series, ...}
+    """
+    if scenario == "dca":
+        return simulate_dca(bench_ret, start_date, end_date, initial_amount, monthly_amount)
+    # lump_sum / goal 모두 lump-sum 시뮬레이션 (initial = 비교 기준)
+    return simulate_lump_sum(bench_ret, start_date, end_date, initial_amount)
+
+
+# Backward compatibility alias (이전 코드 호출용)
+def compute_benchmark_cagr(bench_ret, start_date, end_date):
+    """[Deprecated] simulate_benchmark 사용 권장. lump-sum 가정 (initial=1) 으로 cumulative factor 반환."""
     period = bench_ret[(bench_ret.index >= start_date) & (bench_ret.index <= end_date)].dropna()
     if len(period) == 0:
         return {"cagr": 0.0, "value_series": pd.Series(dtype=float)}
