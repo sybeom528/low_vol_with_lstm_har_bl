@@ -709,17 +709,26 @@ def calc_sharpe_subperiod(
     ret: pd.Series, rf, start: str, end: str, periods_per_year: int = 12
 ) -> float:
     """
-    final master_table._sharpe_subperiod 정확 재현 (line 127-135).
+    final master_table._sharpe_subperiod 정확 1:1 재현 (line 127-135).
 
-    NaN 처리: final 은 sub.std() / exc.mean() 등이 pandas default skipna=True
-              로 NaN 자동 무시 → 우리도 동일 동작 (명시적 dropna 불필요).
+    final 코드 그대로:
+        sub = ret[(ret.index >= start) & (ret.index <= end)]
+        rf_sub = rf.reindex(sub.index).fillna(0)
+        exc = sub - rf_sub
+        vol = sub.std() * sqrt(12)
+        return exc.mean() * 12 / vol
+
+    NaN 처리: final 은 dropna 안 하고 pandas default skipna=True 사용. 동일 적용.
     """
     r = pd.Series(ret)
-    sub_raw = r[(r.index >= start) & (r.index <= end)]
-    sub = sub_raw.dropna()
+    sub = r[(r.index >= start) & (r.index <= end)]
     if len(sub) < 6:
         return np.nan
-    rf_sub = pd.Series(rf).reindex(sub.index).fillna(0) if isinstance(rf, pd.Series) else pd.Series(rf / periods_per_year, index=sub.index)
+    rf_sub = (
+        pd.Series(rf).reindex(sub.index).fillna(0)
+        if isinstance(rf, pd.Series)
+        else pd.Series(rf / periods_per_year, index=sub.index)
+    )
     exc = sub - rf_sub
     vol = sub.std() * np.sqrt(periods_per_year)
     if vol <= 0 or pd.isna(vol):
