@@ -14,7 +14,9 @@ bl_config.py — Black-Litterman 실험 정의
   omega_mode: 'he_litterman' | 'rmse' | 'ff3_paper'
               (scaled는 신뢰성 부족으로 제거됨, 2026-05-07)
   prior     : 'capm_mcap' | 'capm_eq' | 'capm_rp'   # capm_rp = 1/σ 정규화 Risk Parity
-  tc        : float  (거래비용, 편도 turnover 기준, 기본 0.001 = 10bp)
+  tc        : float  (편측(per-side) 거래비용, 기본 0.003 = 30bp)
+                     turnover는 Σ|Δw| ∈ [0,2] (two-way) → TC = turnover × tc
+                     매수 한 번 30bp + 매도 한 번 30bp 카운트
   max_weight: float  (단일 종목 상한, 기본 0.10)
   lstm_pred_path: str | None  (p_mode='lstm_predicted' 또는 omega_mode='rmse' 시 경로)
 """
@@ -46,7 +48,7 @@ BASELINE = {
     'omega_mode'  : 'he_litterman',     # τ·P·Σ·P^T
     'omega_scale' : 1.0,
     'prior'       : 'capm_mcap',        # 시총가중 균형수익률
-    'tc'          : 0.001,              # 10bp
+    'tc'          : 0.003,              # 30bp
     'max_weight'  : 0.10,               # 여기는 팀 합의가 필요한 부분. 몇 %까지 가져갈지에 대한 내용
     'lstm_pred_path': str(_LSTM_PRED_DEFAULT),
 }
@@ -110,6 +112,43 @@ EXPERIMENTS = [
     {**BASELINE, 'name': 'baseline_q55', 'q_value': 0.0055},
     {**BASELINE, 'name': 'baseline_q64', 'q_value': 0.0064},
     {**BASELINE, 'name': 'baseline_q70', 'q_value': 0.007},
+
+    # ═══════════════════════════════════════════════════════════════
+    # [7B] Q 민감도 — winner (mat_eq_eq_lam_pap) × q_value sweep
+    # 목적: 선정된 winner 슬롯에서 q_value 변화에 대한 robustness 검증
+    # 두 sweep:
+    #   - Fine-grained: [0.001, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.009, 0.010]
+    #   - BAB 학술: [0.0055, 0.0064] (q=0.003, 0.007은 fine-grained sweep과 중복)
+    # 기본 winner = q_value 0.003 (이미 mat_eq_eq_lam_pap로 정의됨)
+    # naming: winner_qXX 에서 XX = q_value × 10000 (e.g., 0.0055 → q55)
+    # ═══════════════════════════════════════════════════════════════
+    # Fine-grained sweep (q=0.003은 winner와 중복이라 제외)
+    {**BASELINE, 'name': 'winner_q10',  'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'q_value': 0.001},
+    {**BASELINE, 'name': 'winner_q20',  'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'q_value': 0.002},
+    {**BASELINE, 'name': 'winner_q40',  'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'q_value': 0.004},
+    {**BASELINE, 'name': 'winner_q50',  'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'q_value': 0.005},
+    {**BASELINE, 'name': 'winner_q60',  'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'q_value': 0.006},
+    {**BASELINE, 'name': 'winner_q70',  'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'q_value': 0.007},
+    {**BASELINE, 'name': 'winner_q80',  'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'q_value': 0.008},
+    {**BASELINE, 'name': 'winner_q90',  'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'q_value': 0.009},
+    {**BASELINE, 'name': 'winner_q100', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'q_value': 0.010},
+    # BAB 학술 평균 (위 grid에 없는 값만)
+    {**BASELINE, 'name': 'winner_q55',  'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'q_value': 0.0055},
+    {**BASELINE, 'name': 'winner_q64',  'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'q_value': 0.0064},
+
+    # ═══════════════════════════════════════════════════════════════
+    # [7C] PCT_GROUP 민감도 — winner × pct_group sweep
+    # 목적: P 행렬의 분류 임계값(default 0.30 = 저변동 30% / 고변동 30%)이
+    #       sortino/sharpe/MDD에 미치는 영향 검증
+    # winner default pct_group=0.30 (mat_eq_eq_lam_pap에 명시 안 되었으므로 글로벌 PCT_GROUP=0.30 사용)
+    # ═══════════════════════════════════════════════════════════════
+    {**BASELINE, 'name': 'winner_pct10', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'pct_group': 0.10},
+    {**BASELINE, 'name': 'winner_pct15', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'pct_group': 0.15},
+    {**BASELINE, 'name': 'winner_pct20', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'pct_group': 0.20},
+    {**BASELINE, 'name': 'winner_pct25', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'pct_group': 0.25},
+    # winner default = pct_group 0.30 (mat_eq_eq_lam_pap)
+    {**BASELINE, 'name': 'winner_pct35', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'pct_group': 0.35},
+    {**BASELINE, 'name': 'winner_pct40', 'p_mode': 'lstm_predicted', 'p_weight': 'eq', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_eq', 'lam_mean': 2.5, 'pct_group': 0.40},
 
     # ═══════════════════════════════════════════════════════════════
     # [8] 매트릭스 (LSTM 고정, mat_{prior}_{pw}_{q}_{Ω}, 총 135 cells)
@@ -262,6 +301,25 @@ EXPERIMENTS = [
     {**BASELINE, 'name': 'mat_rp_rp_vsp_pap', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp'},
     {**BASELINE, 'name': 'mat_rp_rp_vsp_rms', 'p_mode': 'lstm_predicted', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'omega_mode': 'rmse', 'prior': 'capm_rp'},
 
+    # ═══════════════════════════════════════════════════════════════
+    # [paper-context] 논문 anchor (mcap_tr_mcap_ff3_pap) 에서 1슬롯만 변경
+    # 99_slot_effects.ipynb의 plot_anchor_compare 빨간 line dense화 용
+    # paper-strict: prior=mcap, p=tr, pw=mcap, q=ff3, om=pap 중 1개만 변경
+    # ═══════════════════════════════════════════════════════════════
+    # vary q (prior=mcap, p=tr, pw=mcap, om=pap 고정)
+    {**BASELINE, 'name': 'paperctx_q_lam', 'q_mode': 'lambda', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'paperctx_q_raw', 'q_mode': 'raw_lam', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'paperctx_q_inv', 'q_mode': 'inv_lambda', 'omega_mode': 'ff3_paper', 'lam_mean': 2.5},
+    {**BASELINE, 'name': 'paperctx_q_vsp', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper'},
+    # vary prior (p=tr, pw=mcap, q=ff3, om=pap 고정)
+    {**BASELINE, 'name': 'paperctx_prior_eq', 'prior': 'capm_eq', 'q_mode': 'ff3_paper', 'omega_mode': 'ff3_paper'},
+    {**BASELINE, 'name': 'paperctx_prior_rp', 'prior': 'capm_rp', 'q_mode': 'ff3_paper', 'omega_mode': 'ff3_paper'},
+    # vary pw (prior=mcap, p=tr, q=ff3, om=pap 고정)
+    {**BASELINE, 'name': 'paperctx_pw_eq', 'p_weight': 'eq', 'q_mode': 'ff3_paper', 'omega_mode': 'ff3_paper'},
+    {**BASELINE, 'name': 'paperctx_pw_rp', 'p_weight': 'rp', 'q_mode': 'ff3_paper', 'omega_mode': 'ff3_paper'},
+    {**BASELINE, 'name': 'paperctx_pw_volm', 'p_weight': 'vol_mcap', 'q_mode': 'ff3_paper', 'omega_mode': 'ff3_paper'},
+    # vary om (prior=mcap, p=tr, pw=mcap, q=ff3 고정) — pap/he는 이미 있음, rms만 추가
+    {**BASELINE, 'name': 'paperctx_om_rms', 'q_mode': 'ff3_paper', 'omega_mode': 'rmse'},
 ]
 
 

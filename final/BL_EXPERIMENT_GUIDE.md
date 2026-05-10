@@ -20,7 +20,8 @@ final/
 ├── analyze_plots.py          ← 시각화 모듈
 │
 ├── 99_run.ipynb              ← walk_forward 실행 → results/*.pkl
-├── 99_analyze.ipynb          ← 24-cell 분석 (J1~J6, K1~K6, K2-H)
+├── 99_analyze.ipynb          ← 분석 단일 진입점 (K_CUT → I → J → K → L → M → N)
+├── 99_slot_effects.ipynb     ← 슬롯 차원 효과 라인플롯 (pivot CSV 자동 생성)
 │
 ├── results/                  ← 214 pkl
 ├── data/                     ← monthly_panel.csv, daily_returns.pkl, ff3_monthly.csv
@@ -42,7 +43,9 @@ final/
    cell-04 : walk_forward(cfg) 함수 정의
    cell-05 : run_list = 미생성 실험만 → 자동 스킵
    cell-06 : 빠른 성과 확인
-③ 99_analyze.ipynb 실행 (Cell 1 → J1 → K1 순)
+③ 99_analyze.ipynb 실행 (Setup → K_CUT → I → J → K → L → M → N 순서대로)
+   ※ K_CUT은 mandatory pre-step. 모든 후속 분석은 2023-12-31 cutoff 기준.
+④ (선택) 99_slot_effects.ipynb 실행 — 슬롯 차원 효과 라인플롯
 ```
 
 > **자동 스킵**: `(RESULTS_DIR / f'{cfg["name"]}.pkl').exists()` → 이미 있으면 스킵.
@@ -90,7 +93,7 @@ final/
 | `q_value` | float | `0.003` | Q 값(또는 base scaling) |
 | `lam_mean` | float | `2.5` | λ 정규화 기준값 |
 | `omega_mode` | `he_litterman` / `rmse` / `ff3_paper` | `he_litterman` | Ω 계산 방식 |
-| `tc` | float | `0.001` | 편도 거래비용 (10bp) |
+| `tc` | float | `0.001` | 편측(per-side) 거래비용 (10bp). turnover=Σ\|Δw\|∈[0,2]이라 TC = turnover×tc로 매수+매도 동시 반영 |
 | `max_weight` | float | `0.10` | 단일 종목 상한 |
 | `lstm_pred_path` | str | 자동 탐색 | LSTM 예측 파일 경로 |
 
@@ -151,12 +154,15 @@ s.t.      Σw_i = 1, 0 ≤ w_i ≤ max_weight (기본 0.10)
 - 하위 `pct=0.30` → **저위험 그룹** (long, P > 0)
 - 상위 `pct=0.30` → **고위험 그룹** (short, P < 0)
 
-**`p_mode`별 σ 정의**:
-| `p_mode` | σ 출처 |
-|---|---|
-| `trailing_vol21` | `vol_21d` (과거 21일 실현) |
-| `trailing_vol252` | `vol_252d` (과거 252일 실현) |
-| `lstm_predicted` | LSTM+HAR 앙상블 예측, `exp(y_pred_ensemble)` (Phase3 산출) |
+**`p_mode`별 σ 정의** (모두 **연환산** vol 단위로 통일):
+| `p_mode` | σ 출처 | 연환산 변환 |
+|---|---|---|
+| `trailing_vol21` | `vol_21d` (과거 21일 실현) | `01_DataCollection.ipynb`에서 `lr.rolling(21).std() × √252` |
+| `trailing_vol252` | `vol_252d` (과거 252일 실현) | 동일하게 `× √252` |
+| `lstm_predicted` | LSTM+HAR 앙상블 예측, `exp(y_pred_ensemble) × √252` (Phase3 산출) | `99_run.ipynb` cell-03에서 `× √252` |
+
+> ⚠️ **단위 일관성 중요**: `lstm_predicted` 모드는 LSTM 예측이 있는 종목만 `vol_21d`를 LSTM 값으로 덮어쓰고, 나머지는 `vol_21d` 그대로 둠. **두 시리즈가 같은 단위(연환산)** 여야 P 랭킹이 올바름. 과거 버그(2026-05-07 이전): LSTM `vol_pred = exp(y_pred)`만 적용해 일별 단위로 계산되어 vol_21d(연환산)와 혼합 → LSTM 커버 종목이 인위적으로 ~16배 작게 보여 P "저변동 30%"가 사실상 "LSTM 커버리지 dummy"로 변질. 이 버그 수정 후 LSTM 슬롯 모든 backtest 재실행 (`results_backup/`은 옛 결과 보관용).
+> [99_run.ipynb](99_run.ipynb) cell-04 `get_vol_series`에 `pred_slice.median() < 0.05` sanity guard 추가됨.
 
 **`p_weight`별 가중 수식** (σ_i: 자산 i의 변동성, m_i: 시가총액):
 
@@ -303,7 +309,7 @@ date        ticker  y_pred_lstm  y_pred_har  y_pred_ensemble  y_true  ...
 2007-04-23  AAPL    -4.12        -4.36       -4.24            -3.99
 ```
 
-`y_pred_ensemble`(log-RV) → `np.exp()` → σ_pred → 월말 기준 종목 랭킹.
+`y_pred_ensemble`(log-daily-RV) → `np.exp() × √252` → **연환산** σ_pred → 월말 기준 종목 랭킹. `√252` 누락 시 `vol_21d`(연환산)와 단위 혼합 → P 랭킹 왜곡 (cell-04에 sanity guard 있음).
 
 ---
 
@@ -344,9 +350,11 @@ rm final/results/{name}.pkl
 | **LSTM 학습** | Phase3에서 walk-forward 사전 생성. 재학습 시 GPU + 수 시간 |
 | **rp 가중방식** | Pyo & Lee 2018 — 30% 선별 후 그룹 내 1/σ 가중 |
 | **vol_mcap** | 전체 유니버스, 30% 컷 없음 |
-| **거래비용 단위** | `tc=0.001` = 편도 10bp, 월 TC = `turnover × tc` |
+| **거래비용 단위** | `tc=0.001` = 편측(per-side) 10bp. turnover는 two-way Σ\|Δw\|∈[0,2]이므로 월 TC = `turnover × tc`가 매수+매도 비용 모두 반영 |
 | **데이터 선행** | `01_DataCollection.ipynb` 실행 후 `data/` 채워진 상태에서 실행 |
 | **monthly_cache** | `99_run` cell-02에서 빌드 후 캐시 — 재시작 시 자동 재사용 |
+| **vol_pred 단위** | `np.exp(y_pred_ensemble) × √252` 로 연환산. 일별/연환산 혼합 시 P 랭킹 왜곡 (cell-04에 guard) |
+| **results_backup/** | 2026-05-07 이전 단위 혼합 버그 결과 (LSTM 슬롯 한정) — **분석엔 절대 사용 금지**, 감사용으로만 보관 |
 
 ---
 
