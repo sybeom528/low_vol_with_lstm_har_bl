@@ -1338,7 +1338,18 @@ def calc_sector_decomposition(
 
 
 def calc_test_ho_gap(ret: pd.Series, rf: pd.Series) -> float:
-    """TEST/HO Gap = TEST Sortino - HO Sortino. 작을수록 학습편향 ↓ (robust)."""
+    """
+    TEST/HO Gap = TEST Sortino - HO Sortino.
+
+    학술 의미:
+      - Gap 클수록 (양수, > 0): 학습편향 (overfitting) ↑ — TEST 에서 잘하지만 HO 에서 못함
+      - Gap 작을수록 (0 에 가까울수록): TEST/HO 일관 = robust
+      - Gap 음수 (HO > TEST): 드문 케이스 — HO 가 TEST 보다 좋음
+
+    검증 표준 (학술 출처):
+      - Bailey & López de Prado (2014) "The Probability of Backtest Overfitting"
+        — TEST/OOS gap 으로 학습편향 정량화
+    """
     s_test = calc_sortino_subperiod(ret, rf, "2010-01-01", "2023-12-31")
     s_ho = calc_sortino_subperiod(ret, rf, "2024-01-01", "2025-12-31")
     if pd.isna(s_test) or pd.isna(s_ho):

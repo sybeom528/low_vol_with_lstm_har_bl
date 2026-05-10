@@ -158,7 +158,11 @@ def render_backtest_kpi(
         st.metric(
             label=f"{emoji} TEST/HO Gap",
             value=_fmt_ratio(gap),
-            help="TEST Sortino - HO Sortino. 작을수록 학습편향 ↓ (robust)",
+            help=(
+                "TEST Sortino − HO Sortino. **Gap 클수록 학습편향 (overfitting) ↑** — "
+                "TEST 에서 잘하지만 HO 에서 못함. Gap 작을수록 (0 에 가까울수록) robust. "
+                "음수면 HO 가 TEST 보다 좋음 (드문 케이스)."
+            ),
         )
 
     with cols[1]:

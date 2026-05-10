@@ -77,7 +77,8 @@ render_subheader(
 # === 영역 3: Backtest Summary KPI 5개 =================================
 st.subheader("Backtest Summary — 검증 KPI 5")
 st.caption(
-    "**TEST/HO Gap** (학습편향 검증) / **Sensitivity Robustness** (156 config Top 위치) / "
+    "**TEST/HO Gap** (TEST Sortino − HO Sortino, **클수록 학습편향 ↑**, Bailey & López de Prado 2014) / "
+    "**Sensitivity Robustness** (156 config Top 위치) / "
     "**4-slot Robustness** (156 config Sortino mean/std) / **Avg Recovery** (위기 평균 회복) / "
     "**Regime 일관성** (R1/R2/R3/HO Sortino 일관성). FULL 기준."
 )
