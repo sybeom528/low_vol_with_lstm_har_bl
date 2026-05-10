@@ -86,12 +86,15 @@ def render_performance_kpi(
     ivw_ret: pd.Series | None,
     rf: pd.Series,
     period: str,
+    fund_gross_ret: pd.Series | None = None,
 ) -> None:
     """
     영역 3: KPI 5 카드 — CAGR / Sortino / Sharpe / IR / Active Return.
 
     final master_table 정합 (subperiod 함수 사용).
     벤치마크 delta 행: 활성 벤치마크 (사이드바 토글) 마다 추가.
+
+    fund_gross_ret 전달 시 CAGR 카드에 Gross + TC 누적 추가 표시 (B-1).
 
     period: "FULL" / "TEST" / "HO"
     """
@@ -102,6 +105,10 @@ def render_performance_kpi(
     cagr = mc.calc_cagr_subperiod(fund_ret, s, e)
     sortino = mc.calc_sortino_subperiod(fund_ret, rf, s, e)
     sharpe = mc.calc_sharpe_subperiod(fund_ret, rf, s, e)
+    cagr_gross = (
+        mc.calc_cagr_subperiod(fund_gross_ret, s, e)
+        if fund_gross_ret is not None else None
+    )
 
     # 벤치마크 활성 (delta 표시용)
     benchmarks = _get_active_benchmarks(spy_ret, ew_ret, ivw_ret)
@@ -129,9 +136,9 @@ def render_performance_kpi(
 
     cols = st.columns(5)
 
-    # 카드 1: CAGR
+    # 카드 1: CAGR (Net + Gross + TC 누적)
     with cols[0]:
-        st.markdown(_label("CAGR", "CAGR"), unsafe_allow_html=True)
+        st.markdown(_label("CAGR", "Net CAGR"), unsafe_allow_html=True)
         st.markdown(f"## {_format_pct(cagr, plus_sign=True)}")
         for name, bench in benchmarks.items():
             bench_cagr = mc.calc_cagr_subperiod(bench, s, e)
@@ -140,6 +147,17 @@ def render_performance_kpi(
             st.markdown(
                 f'<div style="font-size:12px;color:{color};">'
                 f'vs {name} {_format_pct(delta, plus_sign=True)}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        # B-1: Gross + TC 누적 (작은 회색 글씨)
+        if cagr_gross is not None and not pd.isna(cagr_gross):
+            tc_diff = cagr_gross - cagr
+            st.markdown(
+                f'<div style="font-size:11px;color:{COLORS["text_muted"]};margin-top:6px;'
+                f'border-top:1px solid #374151;padding-top:4px;">'
+                f'Gross {_format_pct(cagr_gross, plus_sign=True)}<br>'
+                f'TC -{_format_pct(tc_diff)} (One-way 20bp)'
                 f'</div>',
                 unsafe_allow_html=True,
             )
