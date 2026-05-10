@@ -1,26 +1,22 @@
 """
-timeseries_lib.py — Phase 1.5 + Phase 3-2 핵심 함수 통합 (CS 제외)
+timeseries_lib.py — 본 프로젝트 시계열·통계 함수 모듈
 
-final/ 폴더의 표준 시계열·통계 함수 모듈. 03_Volatility_Forecasting.ipynb 와
-04_Statistical_Validation.ipynb, lstm_pipeline.py 가 본 모듈을 import 하여 사용합니다.
+final_pt/ 폴더의 표준 시계열·통계 함수 모듈. 03a/03b/04 노트북과
+lstm_pipeline.py 가 본 모듈을 import 하여 사용합니다.
 
 함수 카테고리
 -------------
 - 환경: setup_seeds, setup_korean_font
-- 타깃: build_log_rv_target, verify_no_leakage
+- 타깃: build_log_rv_target
 - Walk-Forward: walk_forward_folds, build_fold_inputs
-- LSTM v4: LSTMRegressor, train_one_fold, count_parameters
+- LSTM: LSTMRegressor, train_one_fold, count_parameters
 - HAR-RV: fit_har_rv
-- Ensemble: diebold_pauly_weights, ensemble_predict
-- 평가: rmse, qlike, r2_train_mean, pred_std_ratio, mz_regression, dm_test
-- 통계: anova_variance_decomp, welch_anova, kruskal_wallis_eps_sq,
-        pairwise_mann_whitney, cohen_d, heavy_tail_stats
-- 보고: rmse_with_pct_summary, format_rmse_summary
-
-CS 제외
--------
-Cross-Sectional (Ticker Embedding LSTM) 는 본 모듈에서 추출 X. 통합 대상 =
-Stockwise (per-ticker LSTM) + HAR-RV + Diebold-Pauly Performance-Weighted Ensemble.
+- Ensemble: diebold_pauly_weights
+- 평가: rmse, rmse_with_pct_summary, format_rmse_summary
+- 통계 (04 노트북): anova_variance_decomp, welch_anova, kruskal_wallis_eps_sq,
+                    pairwise_mann_whitney, cohen_d, heavy_tail_stats
+- 데이터 로딩: load_ensemble_predictions, load_sector_mapping,
+              assign_periods, filter_503_universe
 
 사용 예
 -------
@@ -31,13 +27,9 @@ Stockwise (per-ticker LSTM) + HAR-RV + Diebold-Pauly Performance-Weighted Ensemb
 References
 ----------
 - Corsi (2009) HAR-RV
-- Patton (2011) QLIKE
 - Diebold & Pauly (1987) Performance-Weighted Ensemble
-- Mincer & Zarnowitz (1969) MZ regression
-- Diebold & Mariano (1995) DM test
 - Cohen (1988) Effect size standards
 - Welch (1951) ANOVA for unequal variances
-- Lin (2013) Large-n trap warning
 """
 from __future__ import annotations
 
@@ -53,7 +45,6 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from scipy import stats
-from sklearn.linear_model import LinearRegression
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -88,7 +79,7 @@ def setup_korean_font() -> None:
 
 
 # ══════════════════════════════════════════════════════════════════
-# 2. 타깃 빌더 — Log-RV 21d forward (Phase 1.5)
+# 2. 타깃 빌더 — Log-RV 21d forward
 # ══════════════════════════════════════════════════════════════════
 
 def build_log_rv_target(log_ret: pd.Series, horizon: int = 21,
@@ -116,20 +107,6 @@ def build_log_rv_target(log_ret: pd.Series, horizon: int = 21,
     return np.log(rv_forward)
 
 
-def verify_no_leakage(target: pd.Series, log_ret: pd.Series,
-                      horizon: int = 21) -> bool:
-    """Forward 타깃이 미래 데이터를 사용하는지 검증.
-
-    target[t] 가 log_ret[t+1 : t+h+1] 에만 의존하는지 확인.
-    """
-    n = len(target)
-    # 마지막 horizon 일은 forward 데이터 없음 → NaN
-    last_valid_idx = n - horizon - 1
-    if last_valid_idx < 0:
-        return False
-    return pd.isna(target.iloc[-horizon:]).all()
-
-
 # ══════════════════════════════════════════════════════════════════
 # 3. Walk-Forward 데이터셋
 # ══════════════════════════════════════════════════════════════════
@@ -147,7 +124,7 @@ def walk_forward_folds(n_obs: int, is_len: int = 1250, purge: int = 21,
     n_obs : int
         전체 관측치 수.
     is_len : int, default 1250
-        In-Sample 길이 (Phase 1.5 v4 best).
+        In-Sample 길이 (03a Optuna best — `03a_LSTM_Optuna_GridSearch.ipynb` §2 참조).
     purge : int, default 21
         IS-OOS 간 purge (target horizon 만큼).
     embargo : int, default 63
@@ -218,14 +195,16 @@ def build_fold_inputs(features: np.ndarray, target: np.ndarray,
 
 
 # ══════════════════════════════════════════════════════════════════
-# 4. LSTM 모델 (Phase 1.5 v4 best)
+# 4. LSTM 모델
 # ══════════════════════════════════════════════════════════════════
 
 class LSTMRegressor(nn.Module):
     """LSTM 기반 회귀 (시퀀스 → scalar).
 
-    v4 best 기본값: input_size=3 (HAR 3ch+VIX), hidden=32, layers=1, dropout=0.3
-    파라미터 수 ≈ 4,769 (3ch_vix 입력 기준)
+    Default: input_size=3 (모델 구조 데모용), hidden=32, layers=1, dropout=0.3.
+    실제 학습은 lstm_pipeline.V4_BEST_CONFIG 의 input_size=4 (rv_d/rv_w/rv_m/vix_log)
+    로 수행됨 — 03a Optuna best (`03a_LSTM_Optuna_GridSearch.ipynb` §2 참조).
+    파라미터 수: input_size=3 → 4,769 / input_size=4 → 4,897.
     """
 
     def __init__(self, input_size: int = 3, hidden_size: int = 32,
@@ -285,6 +264,7 @@ def train_one_fold(X_tr: torch.Tensor, y_tr: torch.Tensor,
     best_epoch = 0
     best_state = None
     no_improve = 0
+    train_loss = float('nan')   # max_epochs=0 edge case 방어
 
     for epoch in range(max_epochs):
         model.train()
@@ -422,12 +402,6 @@ def diebold_pauly_weights(rmse_lstm: np.ndarray,
     return w_lstm, w_har
 
 
-def ensemble_predict(y_pred_lstm: np.ndarray, y_pred_har: np.ndarray,
-                      w_lstm: np.ndarray, w_har: np.ndarray) -> np.ndarray:
-    """Performance-Weighted Ensemble 예측."""
-    return w_lstm * y_pred_lstm + w_har * y_pred_har
-
-
 # ══════════════════════════════════════════════════════════════════
 # 8. 평가 지표
 # ══════════════════════════════════════════════════════════════════
@@ -516,99 +490,8 @@ def format_rmse_summary(summary: dict, title: str = '') -> str:
     return '\n'.join(lines)
 
 
-def qlike(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """QLIKE (Patton 2011) — 비대칭 손실, 과소예측 패널티.
-
-    QLIKE = mean( σ²/σ̂² − log(σ²/σ̂²) − 1 )
-
-    log-RV 도메인 입력이므로 exp(2·y) = variance 로 변환 후 계산.
-    """
-    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
-    mask = np.isfinite(y_true) & np.isfinite(y_pred)
-    if mask.sum() == 0:
-        return float('nan')
-    var_t = np.exp(2 * y_true[mask])
-    var_p = np.exp(2 * y_pred[mask])
-    var_p = np.maximum(var_p, 1e-30)
-    ratio = var_t / var_p
-    return float(np.mean(ratio - np.log(ratio) - 1.0))
-
-
-def r2_train_mean(y_true: np.ndarray, y_pred: np.ndarray,
-                   train_mean: float) -> float:
-    """1 − SSE_model / SSE_train_mean (trivial baseline 능가 여부)."""
-    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
-    mask = np.isfinite(y_true) & np.isfinite(y_pred)
-    if mask.sum() == 0:
-        return float('nan')
-    sse_model = float(np.sum((y_true[mask] - y_pred[mask]) ** 2))
-    sse_baseline = float(np.sum((y_true[mask] - train_mean) ** 2))
-    if sse_baseline == 0:
-        return float('nan')
-    return 1.0 - sse_model / sse_baseline
-
-
-def pred_std_ratio(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """std(y_pred) / std(y_true) — mean-collapse 진단 (~1.0 이상적)."""
-    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
-    mask = np.isfinite(y_true) & np.isfinite(y_pred)
-    if mask.sum() < 2:
-        return float('nan')
-    s_t = float(np.std(y_true[mask]))
-    s_p = float(np.std(y_pred[mask]))
-    if s_t == 0:
-        return float('nan')
-    return s_p / s_t
-
-
-def mz_regression(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
-    """Mincer-Zarnowitz: y_true = α + β·y_pred + ε. α=0, β=1 이면 unbiased."""
-    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
-    mask = np.isfinite(y_true) & np.isfinite(y_pred)
-    if mask.sum() < 3:
-        return {'alpha': float('nan'), 'beta': float('nan'), 'r2': float('nan')}
-    X = y_pred[mask].reshape(-1, 1)
-    y = y_true[mask]
-    reg = LinearRegression().fit(X, y)
-    return {'alpha': float(reg.intercept_), 'beta': float(reg.coef_[0]),
-             'r2': float(reg.score(X, y))}
-
-
 # ══════════════════════════════════════════════════════════════════
-# 9. Diebold-Mariano 검정
-# ══════════════════════════════════════════════════════════════════
-
-def dm_test(e1: np.ndarray, e2: np.ndarray, h: int = 1) -> Dict[str, float]:
-    """Diebold-Mariano 검정 (Diebold & Mariano 1995).
-
-    H0: 두 모델의 MSE 손실이 동일.
-    DM > 0: 모델 1 (e1) 손실 > 모델 2 (e2) 손실 → 모델 2 우위
-    DM < 0: 모델 1 우위
-    """
-    e1, e2 = np.asarray(e1), np.asarray(e2)
-    mask = np.isfinite(e1) & np.isfinite(e2)
-    if mask.sum() < 10:
-        return {'dm': float('nan'), 'p_value': float('nan'), 'n': int(mask.sum())}
-    d = e1[mask] ** 2 - e2[mask] ** 2
-    n = len(d)
-    d_mean = d.mean()
-    # Newey-West HAC variance (lag = h-1)
-    gamma_0 = float(np.var(d, ddof=1))
-    var_d = gamma_0
-    for lag in range(1, h):
-        gamma_k = float(np.cov(d[:-lag], d[lag:])[0, 1])
-        weight = 1.0 - lag / h
-        var_d += 2 * weight * gamma_k
-    se = math.sqrt(var_d / n) if var_d > 0 else float('nan')
-    if se == 0 or not np.isfinite(se):
-        return {'dm': float('nan'), 'p_value': float('nan'), 'n': n}
-    dm_stat = d_mean / se
-    p_val = 2.0 * (1.0 - stats.norm.cdf(abs(dm_stat)))
-    return {'dm': float(dm_stat), 'p_value': float(p_val), 'n': n}
-
-
-# ══════════════════════════════════════════════════════════════════
-# 10. 학술 통계 검정 (Phase 3-2 §2-B)
+# 9. 학술 통계 검정 (04 노트북에서 사용)
 # ══════════════════════════════════════════════════════════════════
 
 def anova_variance_decomp(panel: pd.DataFrame, value_col: str = 'rmse',
@@ -682,11 +565,6 @@ def welch_anova(values: np.ndarray, groups: np.ndarray) -> Dict[str, float]:
     group_data = [g for g in group_data if len(g) >= 2]
 
     levene_stat, levene_p = stats.levene(*group_data, center='median')
-
-    # Welch's ANOVA via scipy
-    welch_stat, welch_p = stats.f_oneway(*group_data)
-    # Note: stats.f_oneway is classical ANOVA, not Welch.
-    # For true Welch, use scipy >= 1.7.0 stats.alexandergovern or manual.
 
     # Manual Welch F (https://en.wikipedia.org/wiki/Welch%27s_t-test)
     n_groups = len(group_data)
@@ -807,72 +685,7 @@ def heavy_tail_stats(values: np.ndarray) -> Dict[str, float]:
 
 
 # ══════════════════════════════════════════════════════════════════
-# 11. 결과 검증 (재현성 보장)
-# ══════════════════════════════════════════════════════════════════
-
-def assert_close(actual: float, expected: float, tol: float = 0.005,
-                 label: str = '') -> None:
-    """수치 근사 일치 확인 (assert + 명확한 에러 메시지)."""
-    diff = abs(actual - expected)
-    if diff > tol:
-        raise AssertionError(
-            f"[{label}] expected={expected:.4f}, actual={actual:.4f}, "
-            f"diff={diff:.4f} > tol={tol}"
-        )
-    print(f"  ✓ {label}: actual={actual:.4f} (expected={expected:.4f}, "
-          f"diff={diff:.4f})")
-
-
-def assert_phase15_results(metrics: Dict) -> None:
-    """Phase 1.5 v8 ensemble 핵심 수치 검증.
-
-    Snapshot 기준 (5월 초 panel cutoff 시점의 615 종목 stockwise 학습 결과):
-        - LSTM avg RMSE ≈ 0.4298
-        - HAR avg RMSE ≈ 0.3922
-        - Ensemble avg RMSE ≈ 0.3815
-    """
-    print("Phase 1.5 (615 종목 stockwise) 결과 검증:")
-    if 'lstm_rmse' in metrics:
-        assert_close(metrics['lstm_rmse'], 0.4298, tol=0.005,
-                     label='LSTM avg RMSE')
-    if 'har_rmse' in metrics:
-        assert_close(metrics['har_rmse'], 0.3922, tol=0.005,
-                     label='HAR avg RMSE')
-    if 'ensemble_rmse' in metrics:
-        assert_close(metrics['ensemble_rmse'], 0.3815, tol=0.005,
-                     label='Ensemble avg RMSE')
-
-
-def assert_phase3_results(stats_dict: Dict) -> None:
-    """Phase 3-2 §2-B 학술 통계 핵심 수치 검증.
-
-    예상값:
-        - η²_period ≈ 0.450 (LARGE)
-        - η²_ticker ≈ 0.194 (LARGE)
-        - Welch F ≈ 420.59
-        - Skewness ≈ +1.30
-        - Excess Kurtosis ≈ +4.71
-    """
-    print("Phase 3-2 §2-B 학술 통계 결과 검증:")
-    if 'eta_sq_period' in stats_dict:
-        assert_close(stats_dict['eta_sq_period'], 0.450, tol=0.01,
-                     label='η²_period')
-    if 'eta_sq_ticker' in stats_dict:
-        assert_close(stats_dict['eta_sq_ticker'], 0.194, tol=0.01,
-                     label='η²_ticker')
-    if 'welch_F' in stats_dict:
-        assert_close(stats_dict['welch_F'], 420.59, tol=5.0,
-                     label='Welch F')
-    if 'skewness' in stats_dict:
-        assert_close(stats_dict['skewness'], 1.30, tol=0.05,
-                     label='Skewness')
-    if 'excess_kurtosis' in stats_dict:
-        assert_close(stats_dict['excess_kurtosis'], 4.71, tol=0.10,
-                     label='Excess Kurtosis')
-
-
-# ══════════════════════════════════════════════════════════════════
-# 12. 데이터 로딩 유틸 (final/ 환경 호환)
+# 11. 데이터 로딩 유틸
 # ══════════════════════════════════════════════════════════════════
 
 def load_ensemble_predictions(path: str | Path) -> pd.DataFrame:
@@ -892,7 +705,7 @@ def load_ensemble_predictions(path: str | Path) -> pd.DataFrame:
 
 
 def load_sector_mapping(panel_path: str | Path) -> pd.Series:
-    """final/data/monthly_panel.csv 에서 ticker → gics_sector mapping 추출.
+    """final_pt/data/monthly_panel.csv 에서 ticker → gics_sector mapping 추출.
 
     panel 의 마지막 시점 sector 사용 (시점에 따른 변경 무시).
     """
@@ -902,7 +715,7 @@ def load_sector_mapping(panel_path: str | Path) -> pd.Series:
 
 
 def assign_periods(date_series: pd.Series) -> pd.Series:
-    """5 시기 라벨 할당 (Phase 3-2 표준).
+    """5 시기 라벨 할당 (04 노트북 학술 통계 분석용).
 
     P1: 2010-2014 / P2: 2015-2018 / P3: 2019-2020 (COVID) /
     P4: 2021-2022 / P5: 2023-2025
@@ -918,9 +731,9 @@ def assign_periods(date_series: pd.Series) -> pd.Series:
 
 
 def filter_503_universe(df: pd.DataFrame) -> pd.DataFrame:
-    """5 시기 모두 cover 하는 종목만 필터 (Phase 3-2 §2-B 표준).
+    """5 시기 모두 cover 하는 종목만 필터.
 
-    인수/파산 등으로 일부 시기만 데이터 있는 종목 제외.
+    인수/파산 등으로 일부 시기만 데이터 있는 종목 제외 (시기 간 평균 비교의 공정성 확보).
     """
     df = df.copy()
     df['period'] = assign_periods(df['date'])

@@ -23,7 +23,7 @@
 ## 파일 구조
 
 ```
-final/
+final_pt/
 ├── 99_run.ipynb              ← walk_forward 실행 → results/*.pkl
 ├── 99_analyze.ipynb          ← 분석 (K_CUT → I → J → K → L → M → N)
 ├── 99_slot_effects.ipynb     ← 슬롯 차원 효과 라인플롯 (pivot CSV 자동 생성)

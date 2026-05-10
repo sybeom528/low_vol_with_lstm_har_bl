@@ -169,7 +169,7 @@
 
 ### 4-3. Streamlit 재구축 (별도 plan)
 - 본 결정 결과를 반영한 새 Streamlit 단계적 재구축
-- 기존 백업 (`final/_app_draft_backup/`) 참조
+- 새 대시보드는 `streamlit_dashboard/` 폴더에서 별도 개발 진행 중 (위험성향별 분리 폐기 반영)
 
 ---
 
@@ -413,7 +413,7 @@
 
 ## 첨부 파일
 
-### 시각화 (`final/outputs/04_validation/`)
+### 시각화 (`final_pt/outputs/04_validation/`)
 - `fig1_test_vs_holdout_scatter.png` — 156 cfg TEST vs HO 산점도 (overfitting 패턴)
 - `fig2_cumulative_return_top4.png` — Top 1 후보 4개 누적수익률 + HOLD-OUT 구분선
 - `fig3_mat_eq_eq_lam_pap_ho_returns.png` — mat_eq_eq_lam_pap HO 24m return 분포
