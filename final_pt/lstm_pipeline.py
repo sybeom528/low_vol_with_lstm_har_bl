@@ -1,30 +1,37 @@
 """
-lstm_pipeline.py — Phase 1.5 LSTM v4 + HAR-RV Performance Ensemble high-level orchestration.
+lstm_pipeline.py — LSTM (4 채널: rv_d/rv_w/rv_m/vix_log) + HAR-RV Performance Ensemble
+                    high-level orchestration.
 
-final/timeseries_lib.py 의 low-level 함수 (LSTMRegressor / build_fold_inputs /
+final_pt/timeseries_lib.py 의 low-level 함수 (LSTMRegressor / build_fold_inputs /
 train_one_fold / fit_har_rv / walk_forward_folds / diebold_pauly_weights) 를 사용하여
 종목 단위 walk-forward 부터 universe 일괄 8-way 병렬 학습까지 완결합니다.
 
-03_Volatility_Forecasting.ipynb 에서 import 하여 사용:
+03b_Volatility_Forecasting.ipynb 에서 import 하여 사용:
     >>> from lstm_pipeline import (
-    ...     V4_BEST_CONFIG, build_daily_panel, build_v4_inputs,
-    ...     run_walkforward_for_ticker, compute_performance_weights,
-    ...     run_ensemble_for_universe_parallel,
+    ...     V4_BEST_CONFIG, build_daily_panel,
+    ...     prepare_incremental_state, run_ensemble_for_universe_parallel,
     ... )
 
-핵심 함수
----------
-- build_daily_panel()              : final/data 의 daily_returns + macro(vix) → daily_panel
-- build_v4_inputs()                : panel_ticker → 3ch_vix 입력 (rv_d, rv_w, rv_m, vix_log)
-- run_lstm_v4_fold()               : 단일 fold LSTM 학습 + OOS 예측
-- run_walkforward_for_ticker()     : 종목 단위 walk-forward (60+ fold + HAR-RV 동시)
-- compute_performance_weights()    : Diebold-Pauly 1987 inverse-RMSE rolling weights
-- run_ensemble_for_universe_parallel() : 615 종목 × 8-way 병렬 + incremental
+User-facing API
+---------------
+- V4_BEST_CONFIG (dict)                : 03a Optuna best (input_channels='3ch_vix',
+                                          is_len=1250, embargo=63, ...)
+- build_daily_panel()                  : final_pt/data 의 daily_returns + macro(vix)
+                                          → long-format daily_panel (date, ticker,
+                                          log_ret, vix, target_logrv)
+- prepare_incremental_state()          : fold csv 진단 + 자동 truncate
+- run_ensemble_for_universe_parallel() : universe × 8-way 병렬 학습 (incremental 지원)
 
-설계 — final 단독 완결
-----------------------
-모든 입력 데이터는 final/data + final/phase3(data_outputs)/data 만 사용.
-fold csv 가 final/phase3 에 .csv 또는 .csv.gz 형태로 있으면 자동 활용.
+내부 helper (run_ensemble_for_universe_parallel 가 호출)
+-------------------------------------------------------
+- build_v4_inputs(), run_lstm_v4_fold(), run_walkforward_for_ticker(),
+  diagnose_fold_csv(), compute_performance_weights(),
+  auto_n_workers(), _train_ticker_worker()
+
+설계 — final_pt 단독 완결
+-------------------------
+모든 입력 데이터는 final_pt/data + final_pt/phase3(data_outputs)/data 만 사용.
+fold csv 가 final_pt/phase3 에 .csv 또는 .csv.gz 형태로 있으면 자동 활용.
 외부 폴더 의존성 없음.
 """
 from __future__ import annotations
@@ -56,7 +63,7 @@ from timeseries_lib import (   # noqa: E402
 
 
 # =============================================================================
-# Phase 1.5 v4 best 하이퍼파라미터
+# LSTM 채택 하이퍼파라미터 (03a_LSTM_Optuna_GridSearch.ipynb §2 Optuna best)
 # =============================================================================
 V4_BEST_CONFIG = {
     'input_channels'      : '3ch_vix',
@@ -76,46 +83,50 @@ V4_BEST_CONFIG = {
     'step'                : 21,
     'har_w'               : 5,
     'har_m'               : 22,
-    'input_size'          : 4,   # series + 3 extra channels (rv_w, rv_m, vix_log)
+    'input_size'          : 4,   # 4 channels: rv_d, rv_w, rv_m, vix_log
 }
 
 
 # =============================================================================
-# 1. Daily panel 빌드 (final/data 의 daily_returns + macro(vix) → long format)
+# 1. Daily panel 빌드 (final_pt/data 의 daily_returns + macro(vix) → long format)
 # =============================================================================
 def build_daily_panel(
     daily_returns_path: str | Path = None,
     macro_path: str | Path = None,
     universe_path: str | Path = None,
-    sp500_membership_path: str | Path = None,
     out_path: Optional[str | Path] = None,
     horizon: int = 21,
     max_date: Optional[str] = None,
     verbose: bool = True,
 ) -> pd.DataFrame:
-    """final/data 의 daily 데이터로 LSTM 학습용 long format daily_panel 빌드.
+    """final_pt/data 의 daily 데이터로 LSTM 학습용 long format daily_panel 빌드.
 
     출력 컬럼: date, ticker, log_ret, vix, target_logrv
 
     Parameters
     ----------
     daily_returns_path : str | Path
-        final/data/daily_returns.pkl (wide format: date × ticker)
+        final_pt/data/daily_returns.pkl (wide format: date × ticker)
     macro_path : str | Path
-        final/data/macro_daily.csv ('vix' 컬럼 포함)
+        final_pt/data/macro_daily.csv ('vix' 컬럼 포함)
     universe_path : str | Path
-        final/data/universe.csv (LSTM 학습 universe)
-    sp500_membership_path : str | Path
-        final/data/sp500_membership.pkl (시점별 멤버십, 생존편향 필터)
+        final_pt/data/universe.csv (LSTM 학습 universe)
     out_path : str | Path | None
         결과 저장 경로 (None 시 저장 안 함, DataFrame 만 반환)
     horizon : int, default 21
         target_logrv 의 forward 영업일 수
     max_date : str | None, default None
         'YYYY-MM-DD' 형태로 panel 의 끝점 cap. None 시 daily_returns 의 모든 데이터 사용.
-        BL 분석 기간이 2025-12-31 까지면 max_date='2026-02-01' 정도 (forward 21d buffer)
-        로 설정하면 LSTM 학습 범위가 분석 기간에 맞게 자동으로 줄어 학습 시간 ~30% 단축.
+        BL 분석 기간 + forward 21d buffer 만큼만 cap 하면 학습 시간을 줄일 수 있음
+        (예: 분석 끝이 2025-12-31 이면 max_date='2026-02-01' 정도). 03b 노트북은
+        max_date='2026-04-30' 로 설정하여 BL 의 fold 222~226 까지 cover.
     verbose : bool
+
+    Notes
+    -----
+    생존편향 (시점별 S&P500 멤버십) 필터는 본 함수에서 적용하지 않음 — universe 전체 종목으로
+    LSTM 학습. 시점별 멤버십 strict 필터는 BL 단계 (01_DataCollection.ipynb 의 monthly_panel
+    빌드) 에서 적용되며, BL walk-forward 입력에는 시점별 멤버 종목만 포함됨.
 
     Returns
     -------
@@ -123,18 +134,17 @@ def build_daily_panel(
         long format with [date, ticker, log_ret, vix, target_logrv]
     """
     base = _THIS_DIR / 'data'
-    daily_returns_path    = Path(daily_returns_path or base / 'daily_returns.pkl')
-    macro_path            = Path(macro_path           or base / 'macro_daily.csv')
-    universe_path         = Path(universe_path        or base / 'universe.csv')
-    sp500_membership_path = Path(sp500_membership_path or base / 'sp500_membership.pkl')
+    daily_returns_path = Path(daily_returns_path or base / 'daily_returns.pkl')
+    macro_path         = Path(macro_path         or base / 'macro_daily.csv')
+    universe_path      = Path(universe_path      or base / 'universe.csv')
 
     if verbose:
         print('━' * 70)
-        print(' build_daily_panel — final/data → long format LSTM 입력')
+        print(' build_daily_panel — final_pt/data → long format LSTM 입력')
         print('━' * 70)
 
     # 1. daily_returns (wide → long)
-    if verbose: print(f'  [1/5] daily_returns 로드 ...')
+    if verbose: print(f'  [1/4] daily_returns 로드 ...')
     with open(daily_returns_path, 'rb') as f:
         dr = pickle.load(f)
     if not isinstance(dr, pd.DataFrame):
@@ -155,16 +165,17 @@ def build_daily_panel(
     if verbose:
         print(f'    long format: {len(long):,} rows ({long.ticker.nunique()} tickers)')
 
-    # 2. universe 필터
-    if verbose: print(f'  [2/5] universe 필터 ...')
+    # 2. universe 필터 (시점별 strict 멤버십은 BL 단계에서 처리)
+    if verbose: print(f'  [2/4] universe 필터 ...')
     universe = pd.read_csv(universe_path)
     uni_set = set(universe['ticker'].unique())
     long = long[long['ticker'].isin(uni_set)]
     if verbose:
         print(f'    universe 필터 후: {len(long):,} rows ({long.ticker.nunique()} tickers)')
+        print(f'    (시점별 S&P500 멤버십 strict 필터는 BL 단계 monthly_panel 에서 적용)')
 
     # 3. macro 의 vix 추가 (date 기준 broadcast)
-    if verbose: print(f'  [3/5] VIX broadcast ...')
+    if verbose: print(f'  [3/4] VIX broadcast ...')
     macro = pd.read_csv(macro_path, parse_dates=['date'])
     if 'vix' not in macro.columns:
         raise ValueError(f"macro_daily.csv 에 'vix' 컬럼 없음: {list(macro.columns)}")
@@ -172,32 +183,14 @@ def build_daily_panel(
     long = long.merge(macro_vix, on='date', how='left')
     long['vix'] = long['vix'].ffill().bfill().fillna(20.0)
 
-    # 4. target_logrv = log(rolling(21).std()).shift(-horizon) 종목별
-    if verbose: print(f'  [4/5] target_logrv = log(rolling({horizon}).std()).shift(-{horizon}) ...')
+    # 4. target_logrv = log(max(rolling(21).std(), eps)).shift(-horizon) 종목별
+    #    eps guard: 거래정지 종목의 std=0 → log(0)=-inf 방지 (timeseries_lib.build_log_rv_target 와 정합)
+    EPS_RV = 1e-12
+    if verbose: print(f'  [4/4] target_logrv = log(rolling({horizon}).std()).shift(-{horizon}) ...')
     long = long.sort_values(['ticker', 'date']).reset_index(drop=True)
-    def _target(g):
-        rv = g['log_ret'].rolling(horizon).std()
-        return np.log(rv).shift(-horizon)
     long['target_logrv'] = long.groupby('ticker', group_keys=False)['log_ret'].transform(
-        lambda lr: np.log(lr.rolling(horizon).std()).shift(-horizon)
+        lambda lr: np.log(np.maximum(lr.rolling(horizon).std(), EPS_RV)).shift(-horizon)
     )
-
-    # 5. 생존편향 필터 (sp500_membership)
-    if verbose: print(f'  [5/5] 생존편향 필터 ...')
-    with open(sp500_membership_path, 'rb') as f:
-        membership = pickle.load(f)
-    member_dates = sorted(membership.keys())
-
-    def _is_member(date, ticker):
-        idx = pd.Series(member_dates).searchsorted(date, side='right') - 1
-        if idx < 0:
-            return False
-        return ticker in membership[member_dates[idx]]
-
-    if verbose: print(f'    membership 적용 (월말 기준 시점 매칭, 시간 ~30s)...')
-    # 빠른 처리: ticker 별로 멤버십 union 만 적용 (각 일자 strict check 는 panel 빌드 시 비효율)
-    # 단순화: ticker 가 universe 에 있으면 통과 (위 step 2 에서 이미 처리됨)
-    # → strict 멤버십 필터링은 BL 단계 (final/_rebuild_panel_2025.py 의 monthly_panel) 에서
 
     if verbose:
         tg_finite = long[np.isfinite(long.target_logrv)]
@@ -223,7 +216,7 @@ def build_daily_panel(
 def build_v4_inputs(panel_ticker: pd.DataFrame,
                     har_w: int = 5,
                     har_m: int = 22) -> dict:
-    """단일 종목 panel → Phase 1.5 v4 best (3ch_vix) 입력.
+    """단일 종목 panel → (3ch_vix) 입력.
 
     출력 채널 (input_size=4):
       [0] series  : rv_d (|log_ret|)
@@ -533,10 +526,10 @@ def prepare_incremental_state(out_dir: str | Path,
 
     Parameters
     ----------
-    out_dir : final/phase3(data_outputs)/data 등
+    out_dir : final_pt/phase3(data_outputs)/data 등
     fallback_search_paths : list of Path | None, default None
         fold csv 가 out_dir 에 없을 때 검색할 외부 경로 후보.
-        None 시 외부 fallback 없음 — final/phase3 의 .csv.gz 자동 해제 후 사용.
+        None 시 외부 fallback 없음 — final_pt/phase3 의 .csv.gz 자동 해제 후 사용.
         명시 시 (예: [Path('...')]) 그 경로에서 1회 복사. final 단독 동작이
         기본 — 외부 폴더 의존성 0.
     auto_truncate : bool
@@ -565,8 +558,8 @@ def prepare_incremental_state(out_dir: str | Path,
         print(' prepare_incremental_state — 캐시 점검 + 자동 truncate')
         print('━' * 70)
 
-    # 1. fold csv 부재 시 — final/phase3 안의 .csv.gz 자동 압축 해제 시도
-    # 정책 (final 단독): 외부 폴더 fallback 없음. final/phase3 안에서만 검색.
+    # 1. fold csv 부재 시 — final_pt/phase3 안의 .csv.gz 자동 압축 해제 시도
+    # 정책 (final_pt 단독): 외부 폴더 fallback 없음. final_pt/phase3 안에서만 검색.
     #   - fold_path (.csv) 가 있으면 그대로 사용
     #   - .csv 부재 + .csv.gz 존재 → 자동 압축 해제
     #   - 모두 부재 → full 학습 (start_k=0, 모든 종목)
@@ -820,30 +813,6 @@ def auto_n_workers(device: str = 'cuda', verbose: bool = True) -> int:
         return n
     except Exception:
         return 4   # GPU 정보 못 얻으면 보수적
-
-
-def filter_panel_to_target_universe(panel: pd.DataFrame,
-                                     target_tickers: list,
-                                     verbose: bool = True) -> pd.DataFrame:
-    """Panel 일관성 보강 — 학습 대상 universe 와 panel 종목을 일치시킴.
-
-    fold csv 에 이미 학습된 fold 가 있다면 그 종목 list 와 새로 빌드한 panel 의 종목 list
-    를 맞춰서, 학습 결과의 inconsistency 를 방지.
-    """
-    panel_tickers = set(panel['ticker'].unique())
-    target_set = set(target_tickers)
-
-    common = panel_tickers & target_set
-    only_panel = panel_tickers - target_set
-    only_target = target_set - panel_tickers
-
-    if verbose:
-        print(f'  [panel filter] panel 종목 {len(panel_tickers)}, target {len(target_tickers)}')
-        print(f'    공통        : {len(common)}')
-        print(f'    panel 만    : {len(only_panel)}')
-        print(f'    target 만   : {len(only_target)}  (panel 에 없어 학습 불가)')
-
-    return panel[panel['ticker'].isin(target_set)].copy()
 
 
 def run_ensemble_for_universe_parallel(

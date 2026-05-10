@@ -13,7 +13,7 @@
 ## 1. 전체 구조
 
 ```
-final/
+final_pt/
 ├── bl_config.py              ← EXPERIMENTS 정의 (214개)
 ├── bl_functions.py           ← BL 수식 핵심 함수 (Σ/π/P/Q/Ω/BL/TC/Metrics)
 ├── master_table.py           ← results/*.pkl → mt/rt 빌더
@@ -334,7 +334,7 @@ date        ticker  y_pred_lstm  y_pred_har  y_pred_ensemble  y_true  ...
 
 ```bash
 # 특정 실험만 재실행
-rm final/results/{name}.pkl
+rm final_pt/results/{name}.pkl
 # 99_run.ipynb 실행 (해당 cfg만 walk_forward)
 ```
 
