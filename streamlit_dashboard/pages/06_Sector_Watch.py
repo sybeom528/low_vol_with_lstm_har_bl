@@ -10,10 +10,11 @@ Tilt 변천사 / Rotation / Footer + HO 정당화 narrative).
 import streamlit as st
 
 from lib.disclosure import init_session_state, render_footer
-from lib.page_helpers import inject_custom_css, render_page_header
+from lib.page_helpers import inject_custom_css, render_page_header, render_sidebar
 
 inject_custom_css()
 init_session_state()
+render_sidebar()
 
 render_page_header("Sector Watch", "섹터 분석")
 st.info("🚧 이 페이지는 Phase 2 에서 구현 예정입니다 (8 영역).")

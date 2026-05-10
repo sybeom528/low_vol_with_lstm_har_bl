@@ -77,3 +77,66 @@ def render_subheader(title_en: str, title_ko: str, description: str) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_sidebar() -> None:
+    """
+    모든 페이지에서 동일한 사이드바 렌더링 (C-4 6 그룹 + 2 토글).
+
+    Streamlit multi-page 에서 각 페이지마다 자체 사이드바를 그려야 함
+    (`config.toml: showSidebarNavigation = false` 설정 시 자동 nav 비활성).
+
+    호출 위치: 각 페이지 진입 시 inject_custom_css() / init_session_state() 다음.
+    """
+    with st.sidebar:
+        # ── 펀드명 + 메타 (C4-3) ──
+        st.markdown("# Adaptive VolControl Fund")
+        st.markdown("어댑티브 볼컨트롤 펀드")
+        st.caption("Benchmark: SPY  |  Data: 2025-12")
+        st.divider()
+
+        # ── 6 그룹 페이지 navigation (C4-1 c, C4-2 a) ──
+        # 그룹 1: 개요
+        st.markdown("##### ── 개요 ──")
+        st.page_link("app.py", label="Overview", icon="📊")
+
+        # 그룹 2: 체험 (★ Investment Simulator F-6)
+        st.markdown("##### ── 체험 ──")
+        st.page_link("pages/02_Investment_Simulator.py", label="Investment Simulator", icon="💵")
+
+        # 그룹 3: 성과
+        st.markdown("##### ── 성과 ──")
+        st.page_link("pages/03_Performance.py", label="Performance", icon="📈")
+        st.page_link("pages/04_Risk_Metrics.py", label="Risk Metrics", icon="⚠️")
+
+        # 그룹 4: 보유
+        st.markdown("##### ── 보유 ──")
+        st.page_link("pages/05_Holdings.py", label="Holdings", icon="🏢")
+        st.page_link("pages/06_Sector_Watch.py", label="Sector Watch", icon="🌐")
+
+        # 그룹 5: 검증
+        st.markdown("##### ── 검증 ──")
+        st.page_link("pages/07_Methodology.py", label="Methodology", icon="🧪")
+        st.page_link("pages/08_Backtesting.py", label="Backtesting", icon="✅")
+
+        # 그룹 6: 메타
+        st.markdown("##### ── 메타 ──")
+        st.page_link("pages/09_About.py", label="About / FAQ", icon="ℹ️")
+
+        st.divider()
+
+        # ── 토글 1: 기간 (Period) — C4-4 ──
+        st.subheader("📅 기간 (Period)")
+        st.radio(
+            "기간 선택",
+            options=["FULL", "TEST", "HO"],
+            index=["FULL", "TEST", "HO"].index(st.session_state.get("period", "FULL")),
+            key="period",
+            label_visibility="collapsed",
+        )
+
+        # ── 토글 2: 비교 벤치마크 — C4-4 ──
+        st.subheader("📊 비교 (Benchmark)")
+        st.checkbox("SPY", value=st.session_state.get("show_spy", True), key="show_spy")
+        st.checkbox("EW (펀드 universe)", value=st.session_state.get("show_ew", False), key="show_ew")
+        st.checkbox("IVW (Naive Low-vol)", value=st.session_state.get("show_ivw", False), key="show_ivw")

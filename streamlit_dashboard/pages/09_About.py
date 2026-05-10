@@ -10,10 +10,11 @@ pages/09_About.py - About / FAQ
 import streamlit as st
 
 from lib.disclosure import init_session_state, render_footer
-from lib.page_helpers import inject_custom_css, render_page_header
+from lib.page_helpers import inject_custom_css, render_page_header, render_sidebar
 
 inject_custom_css()
 init_session_state()
+render_sidebar()
 
 render_page_header("About / FAQ", "소개 / 자주 묻는 질문")
 st.info(
