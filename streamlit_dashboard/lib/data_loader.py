@@ -61,11 +61,48 @@ def load_ticker_company_map() -> pd.DataFrame | None:
     """
     yfinance 회사명 매핑 (D-2). 파일 없으면 None.
     None 반환 시 호출 측에서 ticker 자체를 사용 (graceful degradation).
+
+    후처리 (D-2 보완 결정 2026-05-10):
+      yfinance.info 가 longName/shortName 을 반환하지 않고 CIK 등 숫자만
+      반환하는 케이스 (인수합병된 옛 종목 — GR, MOLX, TLAB, TWX 등) 자동 보정.
+      → company_name 이 숫자만이거나 빈값/NaN 이면 ticker 자체로 덮어쓰기.
+      이 후처리는 매핑 CSV 가 어떤 환경에서 생성되었든 동일 결과 보장.
     """
     p = DATA_DIR / "ticker_company_map.csv"
     if not p.exists():
         return None
-    return pd.read_csv(p)
+
+    df = pd.read_csv(p)
+
+    # 후처리: 잘못된 매핑을 ticker 로 fallback
+    def _is_invalid(name) -> bool:
+        if not isinstance(name, str):
+            return True  # NaN / None
+        s = name.strip()
+        if s == "":
+            return True
+        if s.isdigit():  # 숫자만 (CIK 등)
+            return True
+        return False
+
+    invalid_mask = df["company_name"].apply(_is_invalid)
+    df.loc[invalid_mask, "company_name"] = df.loc[invalid_mask, "ticker"]
+
+    return df
+
+
+@st.cache_data
+def get_ticker_company_dict() -> dict[str, str]:
+    """
+    ticker → company_name dict. 매핑 파일 부재 시 빈 dict.
+    호출 측 사용 패턴: `name = mapping.get(ticker, ticker)` (graceful degradation).
+
+    `load_ticker_company_map()` 의 후처리 (숫자/빈값 → ticker fallback) 가 적용된 결과.
+    """
+    df = load_ticker_company_map()
+    if df is None:
+        return {}
+    return dict(zip(df["ticker"], df["company_name"]))
 
 
 @st.cache_data
@@ -238,11 +275,26 @@ def compute_ivw_returns(
     return pd.Series(out, name="IVW")
 
 
-# === 기간 필터 (사이드바 토글 — FULL / TEST / HO) =====================
+# === 기간 / Regime 정의 (final/master_table.py 정확 재현) ===========
 
-# TEST = 2010-01 ~ 2023-12 (168m), HO = 2024-01 ~ 2025-12 (24m)
-TEST_END = pd.Timestamp("2023-12-31")
-HO_START = pd.Timestamp("2024-01-01")
+# EVAL_PERIODS — final master_table.py:120-124 그대로
+EVAL_PERIODS = {
+    "TEST":     ("2010-01-01", "2023-12-31"),  # 168m
+    "HOLD_OUT": ("2024-01-01", "2025-12-31"),  # 24m
+    "FULL":     ("2010-01-01", "2025-12-31"),  # 192m
+}
+
+# REGIMES — final master_table.py:109-114 그대로 (HMM n=3 구조전환점)
+# NOTE: HOLD_OUT 은 별도 (EVAL_PERIODS), Regime 은 시장 국면 정의
+REGIMES = {
+    "R1_회복": ("2010-01-01", "2012-06-30"),  # Post-GFC + EU위기 (30m)
+    "R2_확장": ("2012-07-01", "2019-12-31"),  # 장기 Bull (90m)
+    "R3_변동": ("2020-01-01", "2024-12-31"),  # COVID + 22 베어 + AI랠리 (60m)
+}
+
+# 사이드바 토글 호환 (기존 코드 영향 X)
+TEST_END = pd.Timestamp(EVAL_PERIODS["TEST"][1])
+HO_START = pd.Timestamp(EVAL_PERIODS["HOLD_OUT"][0])
 
 
 def filter_period(returns: pd.Series, period: str) -> pd.Series:
@@ -261,3 +313,100 @@ def filter_period(returns: pd.Series, period: str) -> pd.Series:
     if period == "HO":
         return returns[returns.index >= HO_START]
     return returns  # "FULL"
+
+
+def filter_by_eval_period(returns: pd.Series, eval_label: str) -> pd.Series:
+    """EVAL_PERIODS dict 기준 필터 (TEST / HOLD_OUT / FULL)."""
+    start, end = EVAL_PERIODS[eval_label]
+    return returns[(returns.index >= start) & (returns.index <= end)]
+
+
+def filter_by_regime(returns: pd.Series, regime_label: str) -> pd.Series:
+    """REGIMES dict 기준 필터 (R1_회복 / R2_확장 / R3_변동)."""
+    start, end = REGIMES[regime_label]
+    return returns[(returns.index >= start) & (returns.index <= end)]
+
+
+# === 일별 portfolio return 산출 (Performance 영역 8 분포 통계) ========
+
+@st.cache_data
+def compute_fund_daily_returns(
+    _fund_weights: pd.DataFrame,
+    _daily_returns: pd.DataFrame,
+    nan_threshold: float = 0.9,
+) -> pd.Series:
+    """
+    펀드 일별 portfolio return 산출 — final/bl_functions.py:compute_daily_slice 결함처리 차용.
+
+    매월 t 시점 fund.weights 결정 → 다음 월 (t, t+1] 기간 일별 portfolio return:
+      port_d = Σ_i (weight_i × daily_ret_i)
+
+    데이터 결함 처리 (final compute_daily_slice 패턴):
+      1) NaN 비율 < (1-nan_threshold) ticker 만 active universe 유지
+         (예: nan_threshold=0.9 → NaN 10% 초과 ticker 자동 배제)
+      2) 남은 NaN 은 fillna(0) 처리 (그 일자 0% 수익)
+
+    이는 펀드 backtest 와 동일 처리 → 일관성 보장.
+
+    Args:
+        _fund_weights: pd.DataFrame (월별 index, ticker columns, sum=1)
+        _daily_returns: pd.DataFrame (일별 index, ticker columns)
+        nan_threshold: float (final compute_daily_slice thresh_daily 와 동일, 기본 0.9)
+
+    Returns:
+        pd.Series (일별 portfolio return, DatetimeIndex)
+
+    NOTE: 펀드 backtest 자체는 forward-looking weights (t 시점 결정 → t+1 보유) 패턴.
+          여기서는 fund.weights[t] = t 시점 보유 weight 가정 (= t-1 결정).
+          호출 측에서 주의 — t 시점 weight 로 t 까지의 일별 수익률 산출은 look-ahead.
+          따라서 weight[t]를 (t, t+1] 보유 기간에 적용 (shift 1).
+    """
+    daily_returns = _daily_returns
+    weights = _fund_weights
+
+    # 월별 weight 의 인덱스 정렬
+    monthly_dates = pd.DatetimeIndex(weights.index).sort_values()
+
+    parts: list[pd.Series] = []
+    for i, t_decision in enumerate(monthly_dates):
+        # 보유 기간: (t_decision, t_next]
+        t_next = monthly_dates[i + 1] if i + 1 < len(monthly_dates) else daily_returns.index.max()
+        mask = (daily_returns.index > t_decision) & (daily_returns.index <= t_next)
+        period = daily_returns.loc[mask]
+        if len(period) == 0:
+            continue
+
+        # active ticker = weight > 0
+        active_w = weights.loc[t_decision]
+        active_tickers = active_w[active_w > 0].index.tolist()
+        active_in_data = [tk for tk in active_tickers if tk in period.columns]
+        if not active_in_data:
+            continue
+
+        # final compute_daily_slice 결함처리:
+        #   NaN 비율 < (1-nan_threshold) ticker 만 유지
+        period_active = period[active_in_data]
+        T = len(period_active)
+        thresh = int(T * nan_threshold)
+        valid_tickers = period_active.columns[period_active.notna().sum() >= thresh].tolist()
+        if not valid_tickers:
+            continue
+
+        # 남은 NaN 은 0 처리 (final 패턴)
+        period_clean = period_active[valid_tickers].fillna(0)
+
+        # weight 정규화 (active ∩ valid 만으로 sum=1 재조정)
+        w_valid = active_w[valid_tickers]
+        w_sum = w_valid.sum()
+        if w_sum <= 0:
+            continue
+        w_norm = w_valid / w_sum
+
+        # 일별 portfolio return = Σ(weight_i × daily_ret_i)
+        port_d = period_clean.dot(w_norm)
+        parts.append(port_d)
+
+    if not parts:
+        return pd.Series(dtype=float)
+
+    return pd.concat(parts).sort_index()

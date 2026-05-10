@@ -10,10 +10,11 @@ Phase 2 에서 구현 예정.
 import streamlit as st
 
 from lib.disclosure import init_session_state, render_footer, render_simulator_disclaimer
-from lib.page_helpers import inject_custom_css, render_page_header
+from lib.page_helpers import inject_custom_css, render_page_header, render_sidebar
 
 inject_custom_css()
 init_session_state()
+render_sidebar()
 
 render_page_header("Investment Simulator", "투자 시뮬레이터")
 render_simulator_disclaimer()

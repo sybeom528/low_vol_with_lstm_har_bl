@@ -467,6 +467,107 @@ def compute_ivw_returns(monthly_panel, sp500_membership, fund_dates):
 - `sp500_membership.pkl` 그대로 필수 데이터로 유지
 - `daily_returns.pkl` 은 다른 페이지 (예: Risk Metrics 의 일별 분포) 에서 필요할 수 있어 필수 유지
 
+##### 3-2 추가 결정 (Q-E): 메트릭 / 결함 처리 final 정합성
+
+**배경**: 사용자 지적 (2026-05-10) — "각 KPI 및 metrics 는 기존 final 폴더 내에서 계산하던 방식이 있다면 해당 방식을 정확하게 재현할 것. 로직이나 결과 수치가 달라져선 안됨." + "데이터 결함 처리도 final 폴더 내에서 어떻게 처리하는지 확인된다면 그대로 재현."
+
+**진단 결과**:
+- **메트릭 ground truth** = `final/bl_functions.py:compute_metrics` (line 446-548) + `final/master_table.py:_{sharpe,sortino,cagr,mdd}_subperiod` (line 127-164)
+- **데이터 결함 처리 ground truth** = `final/bl_functions.py:compute_daily_slice` (line 26-44) — NaN 비율 < 10% ticker 만 active universe + 남은 NaN → fillna(0)
+- **EVAL_PERIODS / REGIMES** = `final/master_table.py:109-124` 그대로 채택
+
+**결정**:
+1. **`lib/metric_calculators.py` 전체 재구현** — `compute_metrics` + subperiod 함수 4개 정확히 재현
+2. **`lib/data_loader.py` 보강** — `EVAL_PERIODS`, `REGIMES` 상수 + `compute_fund_daily_returns` (compute_daily_slice 패턴 차용)
+3. **Overview Hero KPI 정정** — `rf` 인자 (panel.rf_1m) 전달 + subperiod 함수 사용 (`calc_sortino_subperiod` 등)
+
+**검증 결과**:
+- `compute_metrics(fund.ret, panel.rf_1m, mkt_ret=fund.spy_ret)` 16 메트릭 모두 1e-3 이내 일치 (final round() 효과만 차이)
+- Hero KPI TEST/HOLD_OUT 6 메트릭 (Sortino/CAGR/MDD × 2 기간) 모두 100% 일치
+
+**Sortino 의 두 정의 — final 자체에 존재**:
+- 전체 기간 (`compute_metrics`): `excess[excess<0].std()` (excess 기준)
+- 서브기간 (`_sortino_subperiod`): `sub[sub<0].std()` (raw 기준)
+- → Hero KPI / Performance 의 TEST/HOLD_OUT 표시는 **subperiod 정의** 사용 (master_table 표 일치)
+
+**결과 / 함의**:
+- 모든 페이지 메트릭 결과 = final/master_table 결과와 정확히 일치
+- 데이터 결함 처리 = 펀드 backtest 와 동일 패턴 (정합성 + 일관성)
+- Treynor 만 의도 제외 (decisionlog 별도 결정)
+- daily 분포 (Performance 영역 8) 산출 시 `compute_fund_daily_returns` 사용
+
+##### 3-2 추가 결정 (Q-F): 일별 분포 통계 — Winsorize 미적용 (final 정합)
+
+**배경**: Performance 영역 8 일별 Tab 결과 검증 시 fund_daily Excess Kurtosis +18.96, SPY +12.47 — 처음에는 `daily_returns` 의 SPY -41% spike 같은 outlier 가 영향을 준다고 판단하여 Tukey (1962) 1%/99% winsorize 적용. 그러나 사용자 지적 (2026-05-10): "outlier 발생 원인을 찾고 winsorize 적용이 final 폴더의 의도와 정합한지 검증해."
+
+**진단 결과**:
+1. **SPY `-41.02%` 일자 = 2004-01-02** — daily_returns 시작 시점 first-row computation 오류 (분석 기간 2010-2025 외)
+2. **`^IRX` (Treasury 3-month yield)** — daily_returns 에 yield 값이 그대로 들어가 -400% 같은 비정상. **fund.weights 에 ^IRX 없음** → 자동 제외
+3. **2010-2025 (분석 기간) 내 SPY 일별** : min=-11.59% (COVID), max=+9.99%, Skewness -0.56, Kurtosis +12.47 → **정상 시장 일별 fat tail**
+4. **2010-2025 fund_daily** : min=-11.49%, max=+11.46%, Skewness -0.35, Kurtosis +18.96 → **정상 펀드 일별 fat tail**
+
+**Final pipeline winsorize 패턴 검증**:
+- `final/bl_functions.py:compute_daily_slice` (line 26-44) — NaN < 10% threshold + fillna(0) 만, **winsorize 없음**
+- `final/bl_functions.py:compute_metrics` (line 446-548) — 월별 메트릭만, 일별 분포 통계 산출 X
+- `final/master_table.py` — `compute_metrics` + subperiod 헬퍼만, **winsorize 없음**
+- → **Final 에 winsorize 패턴 부재**
+
+**결정**: 일별 분포 통계 산출 시 **winsorize 미적용** (원본 그대로)
+
+**근거**:
+1. **Final 정합**: final pipeline 에 winsorize 없으므로 우리도 미적용 (사용자 지시 "정확히 일치")
+2. **분석 기간 내 데이터 정상**: 2010-2025 SPY/fund_daily 모두 정상 fat tail 범위
+3. **학술 정직성**: Kurtosis 12-19 는 정상 시장 일별 통계 (Bollerslev 1986 GARCH 동기). winsorize 적용은 fat tail 인위 약화 → 학술 정직성 훼손
+4. **Outlier 원인**: 분석 기간 외 (2004-01-02) 또는 비정상 ticker (^IRX) — 둘 다 우리 사용 데이터에 영향 X
+
+**결과 / 함의**:
+- `lib/performance_charts.py:render_distribution_stats` 의 winsorize 제거 (`_winsorize_series` 헬퍼도 미사용)
+- caption 에 "Kurtosis 12-19 는 정상 fat tail (Bollerslev 1986)" 명시
+- daily 분포 통계 = 원본 데이터 그대로 → final pipeline 의도 정확히 정합
+
+##### 2-Q (2026-05-10): Hero KPI sparkline 제거 (옵션 C) + Risk Metrics plan 보강
+
+**배경**: Hero KPI 5 카드의 sparkline 이 모두 동일한 누적 wealth 곡선으로 표시되어
+정보 가치 redundant. 사용자 지적 (2026-05-10): "다른 페이지에서 각 상세 지표의
+차트를 명확히 보여주고 있다면 옵션 C, 진행되지 않는 부분이 있다면 옵션 B 고려."
+
+**검토된 옵션**:
+- (A) 현재 유지 (모든 카드 동일 sparkline)
+- (B) 각 KPI 별 별도 sparkline (Cumulative wealth / rolling CAGR / rolling Sortino /
+      rolling Vol / underwater curve)
+- (C) Sparkline 제거 + 다른 페이지에서 각 메트릭 시간 추이 차트 명시
+
+**메트릭별 시간 추이 차트 매핑 검증**:
+| Hero KPI | 다른 페이지 시간 추이 차트 |
+|---|---|
+| Cumulative Return | Overview 영역 3 (이중 차트 위) ✅ |
+| Net CAGR | Performance 영역 6 (Rolling Return 1y/3y/5y) ✅ |
+| Sortino | ⚠️ **다른 페이지 부재** — Performance 영역 7 Heatmap 만 (Regime별 표) |
+| Volatility | ⚠️ **다른 페이지 부재** — Risk Metrics 영역 6 = Beta/R²/TE 만 (Vol 명시 X) |
+| MDD | Overview 영역 3 (이중 차트 아래) + Risk Metrics 영역 4 ✅ |
+
+→ Sortino + Volatility 시간 추이가 다른 페이지에 부재 → **옵션 C 단독은 불가**.
+
+**결정**: **옵션 C + Risk Metrics plan 보강** (안 2)
+1. Hero KPI sparkline 제거 (단순화 — 큰 숫자 + TEST/HO 두 줄)
+2. Risk Metrics 영역 6 확장: "Beta + R² + TE 시계열" → "**Volatility + Sortino +
+   Beta + R² + TE 시계열**" (5 메트릭 통합 rolling 시계열 페이지)
+
+**근거**:
+1. **단순성**: Hero KPI 는 "5초 인상" 목적 — sparkline 제거 시 큰 숫자가 더 명확
+2. **정보 redundancy 제거**: 5 카드 동일 sparkline 은 정보 중복
+3. **페이지 분할 명확성**: Risk Metrics 페이지가 "위험 + 시간 추이" 종합 페이지로
+   강화 — Overview = 5초 인상 / Performance = 수익 추이 / Risk Metrics = 위험 추이
+4. **(B) 거리**: rolling Sortino 는 36m lookback 필요 → 첫 36 개월 빈 sparkline →
+   학술적 정확하지만 시각적 혼란
+
+**결과 / 함의**:
+- `lib/overview_charts.py` 의 `_make_sparkline` 함수 제거, render_hero_kpi 카드
+  디자인 단순화 (큰 숫자 + TEST/HO 라벨)
+- `plan/03_pages/04_risk_metrics.md` 영역 6 명세 업데이트
+  (5 메트릭 통합 rolling 시계열 — Volatility / Sortino / Beta / R² / TE)
+- Risk Metrics 페이지 구현 시 영역 6 에 Volatility / Sortino rolling 추가
+
 #### 결정 항목 3-3: Y축 스케일
 
 **검토된 옵션**:

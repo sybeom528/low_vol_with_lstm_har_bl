@@ -33,7 +33,7 @@ from lib.overview_charts import (
     render_hero_kpi,
     render_navigation_cards,
 )
-from lib.page_helpers import inject_custom_css, render_page_header, render_subheader
+from lib.page_helpers import inject_custom_css, render_page_header, render_sidebar, render_subheader
 from lib.validators import startup_data_check
 
 
@@ -59,60 +59,8 @@ init_session_state()
 
 
 # === Step 5: 사이드바 (C-4 6 그룹 + 2 토글) ===========================
-with st.sidebar:
-    # ── 펀드명 + 메타 (C4-3) ────────────────────────────────────────
-    st.markdown("# Adaptive VolControl Fund")
-    st.markdown("어댑티브 볼컨트롤 펀드")
-    st.caption("Benchmark: SPY  |  Data: 2025-12")
-    st.divider()
-
-    # ── 6 그룹 페이지 navigation (C4-1 c, C4-2 a) ──────────────────
-    # 자동 nav 비활성화 (.streamlit/config.toml) + st.page_link 명시적
-
-    # 그룹 1: 개요
-    st.markdown("##### ── 개요 ──")
-    st.page_link("app.py", label="Overview", icon="📊")
-
-    # 그룹 2: 체험 (★ Investment Simulator F-6)
-    st.markdown("##### ── 체험 ──")
-    st.page_link("pages/02_Investment_Simulator.py", label="Investment Simulator", icon="💵")
-
-    # 그룹 3: 성과
-    st.markdown("##### ── 성과 ──")
-    st.page_link("pages/03_Performance.py", label="Performance", icon="📈")
-    st.page_link("pages/04_Risk_Metrics.py", label="Risk Metrics", icon="⚠️")
-
-    # 그룹 4: 보유
-    st.markdown("##### ── 보유 ──")
-    st.page_link("pages/05_Holdings.py", label="Holdings", icon="🏢")
-    st.page_link("pages/06_Sector_Watch.py", label="Sector Watch", icon="🌐")
-
-    # 그룹 5: 검증
-    st.markdown("##### ── 검증 ──")
-    st.page_link("pages/07_Methodology.py", label="Methodology", icon="🧪")
-    st.page_link("pages/08_Backtesting.py", label="Backtesting", icon="✅")
-
-    # 그룹 6: 메타
-    st.markdown("##### ── 메타 ──")
-    st.page_link("pages/09_About.py", label="About / FAQ", icon="ℹ️")
-
-    st.divider()
-
-    # ── 토글 1: 기간 (Period) — C4-4 ───────────────────────────────
-    st.subheader("📅 기간 (Period)")
-    st.radio(
-        "기간 선택",
-        options=["FULL", "TEST", "HO"],
-        index=["FULL", "TEST", "HO"].index(st.session_state.period),
-        key="period",
-        label_visibility="collapsed",
-    )
-
-    # ── 토글 2: 비교 벤치마크 — C4-4 ────────────────────────────────
-    st.subheader("📊 비교 (Benchmark)")
-    st.checkbox("SPY", value=st.session_state.show_spy, key="show_spy")
-    st.checkbox("EW (펀드 universe)", value=st.session_state.show_ew, key="show_ew")
-    st.checkbox("IVW (Naive Low-vol)", value=st.session_state.show_ivw, key="show_ivw")
+# 모든 페이지에서 동일한 사이드바를 그리도록 lib 함수 사용
+render_sidebar()
 
 
 # === 데이터 로드 (캐시) ================================================
@@ -120,6 +68,11 @@ fund = load_fund_results("mat_eq_eq_raw_pap")
 fund_ret = fund["ret"]               # Net 월별 수익률 (Series)
 fund_gross = fund["gross_ret"]       # TC 차감 전
 fund_spy = fund["spy_ret"]           # SPY 월별 수익률
+
+# 무위험 수익률 (월별) — final 정합성을 위해 panel.rf_1m 사용
+# (Sortino / Sharpe / Beta / Alpha 계산 시 final/bl_functions:compute_metrics 와 일치)
+_panel_for_rf = load_monthly_panel()
+fund_rf = _panel_for_rf.groupby("date")["rf_1m"].first()
 
 
 # === 영역 1: Header ===================================================
@@ -140,7 +93,7 @@ render_subheader(
 # === 영역 2: Hero KPI 5개 (TEST + HO 별도, 사이드바 토글 영향 X) ======
 st.subheader("핵심 성과 지표")
 st.caption("TEST 평가 168m / HOLD_OUT 24m 별도 표시 — 사이드바 토글에 영향 받지 않음 (학술 정직성)")
-render_hero_kpi(fund_ret, fund_gross)
+render_hero_kpi(fund_ret, fund_gross, rf=fund_rf)
 st.divider()
 
 
@@ -183,7 +136,7 @@ st.divider()
 
 # === 영역 4: 핵심 강점 카드 3개 =======================================
 st.subheader("핵심 차별화 — Why this Fund")
-render_differentiator_cards(fund_ret)
+render_differentiator_cards(fund_ret, rf=fund_rf)
 st.divider()
 
 

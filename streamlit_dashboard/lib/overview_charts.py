@@ -20,7 +20,7 @@ from plotly.subplots import make_subplots
 
 from lib import metric_calculators as mc
 from lib.colors import BENCHMARK_COLORS, COLORS
-from lib.data_loader import HO_START, TEST_END, filter_period
+from lib.data_loader import EVAL_PERIODS, HO_START, TEST_END, filter_period
 from lib.plot_helpers import add_event_annotations, add_regime_backgrounds
 
 
@@ -43,19 +43,32 @@ def _format_ratio(v: float) -> str:
     return f"{v:.2f}"
 
 
-def _calc_hero_metrics(ret: pd.Series, gross_ret: pd.Series) -> dict[str, dict]:
+def _calc_hero_metrics(
+    ret: pd.Series,
+    gross_ret: pd.Series,
+    rf: pd.Series | None = None,
+) -> dict[str, dict]:
     """
-    Hero KPI 5 메트릭 계산 (TEST + HO 별도).
+    Hero KPI 5 메트릭 (TEST + HO 별도) — final/master_table 과 정확 일치.
 
-    Returns:
-        {
-            "Cumulative Return": {"test": float, "ho": float, "label": str},
-            "Net CAGR":          {...},
-            "Sortino":           {...},
-            "Volatility":        {...},
-            "MDD":               {...},
-        }
+    각 메트릭은 final/master_table.py 의 sortino_TEST / cagr_TEST / mdd_TEST 등과
+    동일하게 subperiod 함수로 계산 (EVAL_PERIODS 기반):
+      - Sortino → calc_sortino_subperiod (final master_table _sortino_subperiod)
+      - CAGR    → calc_cagr_subperiod    (final master_table _cagr_subperiod)
+      - MDD     → calc_mdd_subperiod     (final master_table _mdd_subperiod)
+      - Vol     → final 에 vol_subperiod 부재 → ret.std() * sqrt(12) 직접
+      - CumRet  → final 에 cum_subperiod 부재 → (1+ret).prod() - 1 직접
+
+    Args:
+        ret: 펀드 월별 수익률 (Net), DatetimeIndex 필수
+        gross_ret: TC 차감 전 (향후 확장 위해 받음, 현재 미사용)
+        rf: 무위험 수익률 시리즈 (월별). None 이면 0 (final 정합 X).
     """
+    rf_input = rf if rf is not None else 0.0
+    test_s, test_e = EVAL_PERIODS["TEST"]
+    ho_s, ho_e = EVAL_PERIODS["HOLD_OUT"]
+
+    # Cum Return / Vol — final 에 subperiod 함수 부재 → filter_period 직접 사용
     ret_test = filter_period(ret, "TEST")
     ret_ho = filter_period(ret, "HO")
 
@@ -66,13 +79,13 @@ def _calc_hero_metrics(ret: pd.Series, gross_ret: pd.Series) -> dict[str, dict]:
             "format": "pct",
         },
         "Net CAGR": {
-            "test": mc.calc_cagr(ret_test),
-            "ho": mc.calc_cagr(ret_ho),
+            "test": mc.calc_cagr_subperiod(ret, test_s, test_e),
+            "ho": mc.calc_cagr_subperiod(ret, ho_s, ho_e),
             "format": "pct",
         },
         "Sortino": {
-            "test": mc.calc_sortino(ret_test),
-            "ho": mc.calc_sortino(ret_ho),
+            "test": mc.calc_sortino_subperiod(ret, rf_input, test_s, test_e),
+            "ho": mc.calc_sortino_subperiod(ret, rf_input, ho_s, ho_e),
             "format": "ratio",
         },
         "Volatility": {
@@ -81,58 +94,36 @@ def _calc_hero_metrics(ret: pd.Series, gross_ret: pd.Series) -> dict[str, dict]:
             "format": "pct",
         },
         "MDD": {
-            "test": mc.calc_mdd(ret_test),
-            "ho": mc.calc_mdd(ret_ho),
+            "test": mc.calc_mdd_subperiod(ret, test_s, test_e),
+            "ho": mc.calc_mdd_subperiod(ret, ho_s, ho_e),
             "format": "pct",
         },
     }
 
 
-def _make_sparkline(ret: pd.Series, color_test: str, color_ho: str) -> go.Figure:
+def render_hero_kpi(
+    ret: pd.Series,
+    gross_ret: pd.Series,
+    rf: pd.Series | None = None,
+) -> None:
     """
-    누적 wealth 곡선 sparkline. TEST 영역은 기본색, HO 영역은 빨간 점선.
-    높이 ~50px, 축/legend 없음.
-    """
-    if len(ret) == 0:
-        return go.Figure()
-    wealth = (1 + ret).cumprod()
-    test_part = wealth[wealth.index <= TEST_END]
-    ho_part = wealth[wealth.index >= HO_START]
+    영역 2: Hero KPI 5 카드 그리드 (TEST + HO 별도).
 
-    fig = go.Figure()
-    if len(test_part) > 0:
-        fig.add_trace(go.Scatter(
-            x=test_part.index, y=test_part.values,
-            mode="lines",
-            line=dict(color=color_test, width=1.5),
-            showlegend=False,
-            hoverinfo="skip",
-        ))
-    if len(ho_part) > 0:
-        fig.add_trace(go.Scatter(
-            x=ho_part.index, y=ho_part.values,
-            mode="lines",
-            line=dict(color=color_ho, width=1.5, dash="dot"),
-            showlegend=False,
-            hoverinfo="skip",
-        ))
-    fig.update_layout(
-        height=50,
-        margin=dict(l=0, r=0, t=0, b=0),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
-    )
-    return fig
+    Sparkline 제거 (옵션 C, 2026-05-10 결정 Q-G):
+    각 메트릭의 시간적 추이는 다른 페이지에서 명확히 표시:
+      - Cumulative Return → Overview 영역 3 (이중 차트 위)
+      - Net CAGR          → Performance 영역 6 (Rolling Return)
+      - Sortino           → Risk Metrics (Sortino rolling 시계열)
+      - Volatility        → Risk Metrics 영역 6 (Vol/Beta/R²/TE 시계열, Volatility 추가)
+      - MDD               → Overview 영역 3 (이중 차트 아래) + Risk Metrics 영역 4
 
+    사이드바 토글 영향 받지 않음 (고정 — 학술 정직성).
 
-def render_hero_kpi(ret: pd.Series, gross_ret: pd.Series) -> None:
+    Args:
+        rf: 무위험 수익률 시리즈 (월별). None 이면 0 — Sortino 결과가 final 과
+            정확히 일치하려면 panel.rf_1m 전달 필요.
     """
-    영역 2: Hero KPI 5 카드 그리드 (TEST + HO 별도, sparkline 포함).
-    사이드바 토글 영향 받지 않음 (고정).
-    """
-    metrics = _calc_hero_metrics(ret, gross_ret)
+    metrics = _calc_hero_metrics(ret, gross_ret, rf=rf)
     cols = st.columns(5)
     items = list(metrics.items())
 
@@ -144,24 +135,24 @@ def render_hero_kpi(ret: pd.Series, gross_ret: pd.Series) -> None:
             fmt_fn = _format_pct if fmt == "pct" else _format_ratio
             plus = (label != "MDD")  # MDD 는 음수, +기호 부적절
 
-            # 메인 라벨
-            st.markdown(f"**{label}**")
-            # TEST / HO 두 줄
-            st.caption(f"TEST: {fmt_fn(test_v, plus) if fmt == 'pct' else fmt_fn(test_v)}")
-            ho_color = COLORS["accent_red"] if (not pd.isna(ho_v) and ho_v < 0 and label != "MDD") else COLORS["text_muted"]
+            test_str = fmt_fn(test_v, plus) if fmt == "pct" else fmt_fn(test_v)
+            ho_str = fmt_fn(ho_v, plus) if fmt == "pct" else fmt_fn(ho_v)
+
+            # 단순 카드 — 큰 숫자 강조 + TEST / HO 두 줄 (sparkline 제거)
             st.markdown(
-                f'<div style="color:{COLORS["accent_red"] if label != "Volatility" else COLORS["text_muted"]};font-size:13px;">'
-                f"HO: {fmt_fn(ho_v, plus) if fmt == 'pct' else fmt_fn(ho_v)}"
-                f"</div>",
+                f'<div style="border-left:3px solid {COLORS["primary"]};'
+                f'padding:8px 0 8px 12px;margin-bottom:4px;">'
+                f'<div style="font-size:13px;color:#9CA3AF;font-weight:600;">{label}</div>'
+                f'<div style="font-size:24px;color:#FAFAFA;font-weight:700;margin-top:4px;">'
+                f'{test_str}'
+                f'</div>'
+                f'<div style="font-size:11px;color:#9CA3AF;margin-top:2px;">TEST</div>'
+                f'<div style="font-size:14px;color:{COLORS["accent_red"]};font-weight:600;margin-top:8px;">'
+                f'{ho_str}'
+                f'</div>'
+                f'<div style="font-size:11px;color:#9CA3AF;">HOLD_OUT</div>'
+                f'</div>',
                 unsafe_allow_html=True,
-            )
-            # Sparkline (각 카드별 unique key 로 ID 충돌 회피)
-            spark = _make_sparkline(ret, COLORS["primary"], COLORS["accent_red"])
-            st.plotly_chart(
-                spark,
-                use_container_width=True,
-                config={"displayModeBar": False},
-                key=f"hero_sparkline_{label}",
             )
 
 
@@ -337,22 +328,30 @@ _DIFFERENTIATOR_CARDS = [
 ]
 
 
-def _calc_card_values(ret: pd.Series) -> dict[str, str]:
-    """강점 카드에 표시할 메트릭 값 계산."""
-    ret_test = filter_period(ret, "TEST")
+def _calc_card_values(ret: pd.Series, rf: pd.Series | None = None) -> dict[str, str]:
+    """
+    강점 카드 메트릭 — final master_table 정합 (subperiod 함수 사용).
+    """
+    rf_input = rf if rf is not None else 0.0
+    test_s, test_e = EVAL_PERIODS["TEST"]
+    ho_s, ho_e = EVAL_PERIODS["HOLD_OUT"]
     ret_ho = filter_period(ret, "HO")
+
     return {
         "vol_ho": _format_pct(mc.calc_volatility(ret_ho)),
-        "sortino": _format_ratio(mc.calc_sortino(ret_test)),
-        "net_cagr": _format_pct(mc.calc_cagr(ret_test), plus_sign=True),
+        "sortino": _format_ratio(mc.calc_sortino_subperiod(ret, rf_input, test_s, test_e)),
+        "net_cagr": _format_pct(mc.calc_cagr_subperiod(ret, test_s, test_e), plus_sign=True),
     }
 
 
-def render_differentiator_cards(ret: pd.Series) -> None:
+def render_differentiator_cards(ret: pd.Series, rf: pd.Series | None = None) -> None:
     """
     영역 4: 3 핵심 강점 카드 (Methodology / Backtesting / Performance 로 navigation).
+
+    Args:
+        rf: 무위험 수익률 시리즈. None 이면 0 (final 정합 X).
     """
-    values = _calc_card_values(ret)
+    values = _calc_card_values(ret, rf=rf)
     cols = st.columns(3)
 
     for col, card in zip(cols, _DIFFERENTIATOR_CARDS):
