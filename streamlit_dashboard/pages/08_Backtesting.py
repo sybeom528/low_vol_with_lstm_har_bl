@@ -48,7 +48,7 @@ render_sidebar()
 
 
 # === 데이터 로드 ======================================================
-fund = load_fund_results()  # default = mat_eq_mcap_raw_rms
+fund = load_fund_results()  # default = mat_eq_mcap_raw_he
 ret = fund["ret"]
 spy = fund["spy_ret"]
 config_name = fund["config"]["name"]

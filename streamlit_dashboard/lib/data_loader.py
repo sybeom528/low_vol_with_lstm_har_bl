@@ -203,9 +203,9 @@ def load_sp500_membership() -> dict:
 # === 펀드 결과 ========================================================
 
 @st.cache_data
-def load_fund_results(config_name: str = "mat_eq_mcap_raw_rms") -> dict:
+def load_fund_results(config_name: str = "mat_eq_mcap_raw_he") -> dict:
     """
-    펀드 backtest 결과 (최종 Top 1 = mat_eq_mcap_raw_rms).
+    펀드 backtest 결과 (최종 Top 1 = mat_eq_mcap_raw_he).
 
     config 차원: prior=capm_eq / p_weight=mcap / q_mode=raw_lam / omega_mode=rmse
     선정 근거: turnover 안정성 (~0.43, mat_eq_eq_raw_pap 의 0.99 대비 절반)
@@ -253,7 +253,7 @@ def list_available_configs() -> list[str]:
             return names
     if ORIGINAL_RESULTS_DIR.exists():
         return sorted(p.stem for p in ORIGINAL_RESULTS_DIR.glob("*.pkl") if p.is_file())
-    return ["mat_eq_mcap_raw_rms"]  # fallback
+    return ["mat_eq_mcap_raw_he"]  # fallback
 
 
 # === Baseline 산출 (Overview 영역 3 비교 라인) ========================

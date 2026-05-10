@@ -1,7 +1,7 @@
 # Streamlit 대시보드 의사결정 로그 — 인덱스
 
 > **프로젝트**: Adaptive VolControl Fund — Streamlit 펀드 홍보 대시보드
-> **모델**: `mat_eq_mcap_raw_rms` (최종 확정 Top 1, 2026-05-10 변경 — turnover 안정성 + spike 완화)
+> **모델**: `mat_eq_mcap_raw_he` (최종 확정 Top 1, 2026-05-10 변경 — turnover 안정성 + spike 완화)
 > **작성 목적**: 모든 의사결정의 배경 / 근거 / 결과 (함의) 를 명확히 기록하여 향후 검토 가능하게 함
 > **작성 시작**: 2026-05-10
 > **분리 일자**: 2026-05-10 (단일 7,469 줄 파일 → 11개 파일 → 12개 파일 [D~L 분리])
@@ -27,12 +27,17 @@
 
 **선행 작업의 폐기**:
 - 이전 단계 `06_Top1_Selection.ipynb` 분석 (다중 메트릭 + lexicographic + Decision Matrix + sensitivity test) 은 사용자에 의해 **폐기** 되었습니다 (commit `cb899bd`).
-- 사용자는 별도 기준으로 1차 `mat_eq_eq_raw_pap` 을 Top 1 으로 결정 (2026-05-10).
-- **2026-05-10 (구현 후 보강)**: 156 config 비교 분석을 통해 **`mat_eq_mcap_raw_rms` 로 최종 변경**.
-  - 사유: pap (ff3_paper omega) 계열의 weight spike 패턴이 모델 narrative 안정성을 저해
-  - 신모델 차원: prior=capm_eq / **p_weight=mcap** (시가총액 가중) / q_mode=raw_lam / **omega_mode=rmse**
-  - 효과: turnover_avg 0.99 → 0.43 (절반 감소), Vol 13.5% → 11.8%, MDD 안정 유지 (-13.9%)
-- 본 대시보드는 `mat_eq_mcap_raw_rms` 기준으로 구축됩니다.
+
+**모델 변경 이력**:
+- **1차 (2026-05-10)**: `mat_eq_eq_raw_pap` (별도 기준 선정) — pap 계열 (ff3_paper omega) 의 weight spike 패턴 narrative 안정성 저해
+- **2차 (2026-05-10)**: `mat_eq_mcap_raw_rms` 로 변경 (omega=rmse) — turnover 안정성 + spike 완화
+- **3차 (2026-05-11, 최종)**: **`mat_eq_mcap_raw_he`** 로 변경 (omega=he_litterman, 사용자 결정 — rms 모델 문제로 재변경)
+  - 신모델 차원: prior=capm_eq / **p_weight=mcap** (시가총액 가중) / q_mode=raw_lam / **omega_mode=he_litterman** (He & Litterman 1999)
+  - 메트릭 (FULL): CAGR 13.78% / Vol 11.80% / MDD -13.93% / Sharpe 1.04 / Sortino 1.83 / Turnover 0.42
+  - 156 config Sortino Rank: **14 / 159 (Top 8.8%)** — 여전히 우수
+  - rms vs he 차이 미미 (omega scaling 차이만)
+
+- 본 대시보드는 `mat_eq_mcap_raw_he` 기준으로 구축됩니다.
 
 **펀드 모델 핵심 메트릭** (참조용):
 

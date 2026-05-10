@@ -117,7 +117,7 @@ def render_backtest_kpi(
     ret: pd.Series,
     spy: pd.Series,
     rf: pd.Series,
-    current_config: str = "mat_eq_mcap_raw_rms",
+    current_config: str = "mat_eq_mcap_raw_he",
 ) -> None:
     """
     5 KPI: TEST/HO Gap / Sensitivity Robustness / 4-slot Robust /
@@ -232,7 +232,7 @@ def _compute_all_config_cumulative(start: str = "2010-01-31") -> pd.DataFrame:
 def render_cumulative_comparison(
     fund_ret: pd.Series,
     fund_spy: pd.Series,
-    current_config: str = "mat_eq_mcap_raw_rms",
+    current_config: str = "mat_eq_mcap_raw_he",
 ) -> None:
     """
     156 config 의 누적 수익률 비교 — spaghetti / percentile 토글.
@@ -485,7 +485,7 @@ def render_sub_events(
 # 영역 6: Sensitivity Test (Top 10 + 신모델 강조)
 # ======================================================================
 
-def render_sensitivity_test(current_config: str = "mat_eq_mcap_raw_rms") -> None:
+def render_sensitivity_test(current_config: str = "mat_eq_mcap_raw_he") -> None:
     """Top 10 config 표 + 신모델 강조 + Top 1-10 차이 막대."""
     df = _compute_all_config_metrics()
     if len(df) == 0:
@@ -548,7 +548,7 @@ def render_sensitivity_test(current_config: str = "mat_eq_mcap_raw_rms") -> None
         sortino_val = df.loc[current_config, "Sortino"]
         top_diff = df_sorted["Sortino"].iloc[0] - df_sorted["Sortino"].iloc[-1]
         st.info(
-            f"🎯 **신모델 mat_eq_mcap_raw_rms** Sortino **{sortino_val:.3f}** "
+            f"🎯 **신모델 mat_eq_mcap_raw_he** Sortino **{sortino_val:.3f}** "
             f"= Rank **{rank} / {len(df)}** (상위 {(1 - (rank-1)/(len(df)-1))*100:.1f}%). "
             f"Top {top_n} 의 Sortino 차이 = **{top_diff:.3f}** → "
             f"**{'4-slot 변경에도 결과 안정 (robust)' if top_diff < 0.10 else '일부 모델 차이 큼 — Top 1 의존성'}**."

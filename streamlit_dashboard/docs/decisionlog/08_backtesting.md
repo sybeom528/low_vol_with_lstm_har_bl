@@ -29,7 +29,7 @@
 
 ### 추가 결정 (BT-Q1, 2026-05-11): 메트릭 정합성 + 156 config 데이터 포함
 
-**배경**: Phase 3.2 구현 (Phase 2.1/2.2/2.3 동일 패턴 — 신모델 mat_eq_mcap_raw_rms 기준).
+**배경**: Phase 3.2 구현 (Phase 2.1/2.2/2.3 동일 패턴 — 신모델 mat_eq_mcap_raw_he 기준).
 
 **Final 정합 메트릭** (subperiod 함수 사용):
 - Regime별 CAGR / Sortino / Sharpe / MDD = `calc_*_subperiod` 함수 (master_table 1:1)
@@ -54,7 +54,7 @@
 - `.gitignore` 에 `!streamlit_dashboard/data/results/*.pkl` negation
 - `lib/data_loader.list_available_configs()` 추가 — main 에서도 156 config 접근 가능
 
-**검증 결과** (신모델 mat_eq_mcap_raw_rms):
+**검증 결과** (신모델 mat_eq_mcap_raw_he):
 - TEST/HO Gap: 1.265
 - Regime 일관성 score: 2.73 (R1=2.23/R2=2.07/R3=1.86/HO=0.81)
 - Avg Recovery: 2.5 개월 (2024 IT Rotation = 7m, HO narrative)

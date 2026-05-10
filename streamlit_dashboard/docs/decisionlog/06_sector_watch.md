@@ -59,7 +59,7 @@
 - **Markowitz (1952)** "Portfolio Selection" — 평균-분산 이론
 - **Fama-French (1992)** "The Cross-Section of Expected Stock Returns" — factor diversification
 
-**SPY Sector Weight 산출 검증** (신모델 mat_eq_mcap_raw_rms, Latest 2025-12):
+**SPY Sector Weight 산출 검증** (신모델 mat_eq_mcap_raw_he, Latest 2025-12):
 - Fund Sector HHI: 0.1350
 - SPY  Sector HHI: 0.1742 (Fund 보다 집중도 ↑ — IT 집중)
 - **Most Underweight (Fund): Information Technology -33.31%** ★ HO narrative 핵심 검증

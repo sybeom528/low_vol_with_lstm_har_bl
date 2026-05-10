@@ -64,7 +64,7 @@ render_sidebar()
 
 
 # === 데이터 로드 (캐시) ================================================
-fund = load_fund_results()  # default = mat_eq_mcap_raw_rms (최종 Top 1)
+fund = load_fund_results()  # default = mat_eq_mcap_raw_he (최종 Top 1)
 fund_ret = fund["ret"]               # Net 월별 수익률 (Series)
 fund_gross = fund["gross_ret"]       # TC 차감 전
 fund_spy = fund["spy_ret"]           # SPY 월별 수익률
