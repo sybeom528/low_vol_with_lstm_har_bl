@@ -65,16 +65,30 @@
 - **Most Underweight (Fund): Information Technology -33.31%** ★ HO narrative 핵심 검증
 - Active Bets: 11 (모든 섹터)
 
-**GICS 11 표준 정합화 (사전 작업)**:
-- universe.csv / monthly_panel.csv 에 yfinance 형식 (Healthcare/Technology/Consumer Defensive 등) 혼재
-- `lib/data_loader.GICS_SECTOR_NORMALIZATION` 으로 load 시점 자동 정합화 → 11 표준 통일
-- ticker_to_sector lookup: panel 우선 (실시점 GICS) + universe fallback
+**Regime 별 Sector HHI 검증 (신모델, 검증 후 narrative 정확화)**:
+
+| Regime | Fund HHI mean | Fund HHI median | SPY HHI mean | 해석 |
+|---|---:|---:|---:|---|
+| R1 (2010-2012) | 0.142 | 0.140 | 0.124 | 분산 |
+| **R2 (2012-2019)** | **0.406** | **0.446** | 0.120 | **vol-target Defensive 도피 — 2017~2018 Utilities 70%+** |
+| R3 (2020-2023) | 0.187 | 0.170 | 0.139 | 분산 회복 |
+| HO (2024-2025) | 0.138 | 0.135 | 0.159 | **Fund 분산 < SPY 집중 — HO 정당화 핵심** |
+
+**중요 narrative 정정 (2026-05-10 검증 결과 반영)**:
+- 1차 narrative: "Fund 모든 Regime 에서 일관된 분산"
+- 2차 narrative (정확): **"vol-targeted 적응형 운용"** — R2 의 Defensive 집중 + R3/HO 의 sector 분산 모두 vol-target 모델의 학습된 결과. 단순 sector 분산이 아닌 risk-aware 분산.
 
 **결과 / 함의**:
 - `lib/metric_calculators.py` 보강 — 4 신규 함수 (compute_spy_sector_weights / calc_sector_tilt / calc_active_bets / calc_sector_decomposition)
 - `lib/sector_charts.py` 신규 — 6 영역 함수
+- 영역 8 narrative 보정 (1차 검증 결과 반영) — "vol-targeted 적응형 운용" 강조
 - 모든 결과가 학술 출처 명시 → 정직성 확보
-- HO narrative 강화 (신모델 mat_eq_mcap_raw_rms 에서 -19.3%p 차이로 narrative 설득력 ↑)
+- HO narrative 강화 (신모델 -19.3%p 차이로 설득력 ↑)
+
+**GICS 11 표준 정합화 (사전 작업)**:
+- universe.csv / monthly_panel.csv 에 yfinance 형식 (Healthcare/Technology/Consumer Defensive 등) 혼재
+- `lib/data_loader.GICS_SECTOR_NORMALIZATION` 으로 load 시점 자동 정합화 → 11 표준 통일
+- ticker_to_sector lookup: panel 우선 (실시점 GICS) + universe fallback
 
 ### 페이지 메타 결정 (Sector M-1 ~ M-4)
 

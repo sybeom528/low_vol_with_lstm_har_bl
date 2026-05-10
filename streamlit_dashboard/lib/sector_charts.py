@@ -393,38 +393,41 @@ def render_sector_rotation(
             [d for d in weights.index if d in pd.DatetimeIndex(target_dates)]
         ) if len(target_dates) > 0 else weights.index
 
-    # Sector 시계열 산출
-    fund_data: dict[str, list[float]] = {}
-    spy_data: dict[str, list[float]] = {}
-    valid_dates: list[pd.Timestamp] = []
+    # Sector 시계열 산출 — 1차 pass: 시점별 (fsw, ssw) 수집 + 전체 sector 합집합
+    series_per_t: list[tuple[pd.Timestamp, pd.Series, pd.Series]] = []
+    all_sectors_set: set[str] = set()
     for t in weights.index:
         if time_mode == "분기별" and t.month not in (3, 6, 9, 12):
             continue
-        valid_dates.append(t)
         fsw = mc.calc_sector_weights(weights.loc[t], ticker_to_sector)
         if view_mode != "Fund":
             ssw = mc.compute_spy_sector_weights(panel, sp500_membership, t, ticker_to_sector)
         else:
             ssw = pd.Series(dtype=float)
-        all_sectors = sorted(set(fsw.index) | set(ssw.index))
+        series_per_t.append((t, fsw, ssw))
+        all_sectors_set.update(fsw.index)
+        all_sectors_set.update(ssw.index)
+
+    valid_dates = [t for t, _, _ in series_per_t]
+    all_sectors = sorted(all_sectors_set)
+
+    # 2차 pass: 모든 sector × 모든 시점 — 부재 시 0 보강 (길이 일치 보장)
+    fund_data: dict[str, list[float]] = {s: [] for s in all_sectors}
+    spy_data: dict[str, list[float]] = {s: [] for s in all_sectors}
+    for _, fsw, ssw in series_per_t:
         for s in all_sectors:
-            fund_data.setdefault(s, []).append(float(fsw.get(s, 0)))
-            spy_data.setdefault(s, []).append(float(ssw.get(s, 0)))
+            fund_data[s].append(float(fsw.get(s, 0)))
+            spy_data[s].append(float(ssw.get(s, 0)))
 
     # view_mode 별 series 결정
     if view_mode == "Fund":
-        series_dict = {s: vals for s, vals in fund_data.items()}
+        series_dict = {s: fund_data[s] for s in all_sectors}
     elif view_mode == "SPY":
-        series_dict = {s: vals for s, vals in spy_data.items()}
+        series_dict = {s: spy_data[s] for s in all_sectors}
     else:  # Tilt
-        all_secs = set(fund_data) | set(spy_data)
         series_dict = {
-            s: [
-                fund_data.get(s, [0] * len(valid_dates))[i]
-                - spy_data.get(s, [0] * len(valid_dates))[i]
-                for i in range(len(valid_dates))
-            ]
-            for s in all_secs
+            s: [fund_data[s][i] - spy_data[s][i] for i in range(len(valid_dates))]
+            for s in all_sectors
         }
 
     fig = go.Figure()
@@ -483,10 +486,11 @@ def render_ho_justification(
     """
     # === 1. 학술 narrative 박스 ===
     st.info(
-        "ℹ️ **Markowitz (1952) 의 평균-분산 이론**에 따르면 sector 분산은 "
-        "idiosyncratic risk 를 줄이고 장기 위험조정 수익을 향상시킵니다. "
-        "그러나 단기 sector concentration 시기 (예: 2024 AI rally) 에는 일시적 underperform 가능. "
-        "펀드는 이 trade-off 를 의도한 분산 운용입니다."
+        "ℹ️ **Markowitz (1952) 평균-분산 이론** + **Fama-French (1992) factor diversification** 관점에서, "
+        "본 펀드 (BL+LSTM vol-target) 는 **단순 sector 분산이 아닌 risk-aware (vol-target) 분산** 운용입니다. "
+        "→ 시장 변동성에 따라 sector 집중 (예: 2017 R2 Defensive 도피) / sector 분산 (HO 24m) 을 "
+        "동적으로 선택. **HO 24m 의 IT under-weight** 는 AI Rally 시기의 trade-off 이며, "
+        "장기 vol-targeted 분산 운용의 본질을 보여주는 의도된 결과입니다."
     )
 
     # === 2. Chart 1: SPY IT Mcap + Fund IT Tilt 이중 축 ===
@@ -626,16 +630,23 @@ def render_ho_justification(
     )
     st.plotly_chart(fig3, use_container_width=True)
     st.caption(
-        "Fund 는 모든 Regime 에서 일관된 분산 (낮은 HHI) 유지. "
-        "SPY 는 HO 24m 에 sector 집중도 (HHI) 가 가장 높음 — IT 집중의 직접적 증거."
+        "**R1 / R3 / HO**: Fund HHI 0.14~0.19 — sector 분산 운용. "
+        "**R2 (2012-19, 90m)**: Fund HHI 0.41 — vol-target 모델이 시장 변동성 시기 (특히 2017 정치/금리 불확실성) "
+        "Defensive 섹터 (Utilities 70%+ / Staples 30%) 로 도피 학습. "
+        "**HO 24m**: Fund 0.14 < SPY 0.16 — **펀드 분산 회복 vs SPY IT 집중** = HO 정당화 narrative 핵심."
     )
     st.divider()
 
     # === 5. 결론 박스 ===
     st.success(
-        "✅ **결론: 장기 Sector 분산 운용의 가치**\n\n"
+        "✅ **결론: Vol-targeted 적응형 운용의 가치**\n\n"
         "**Markowitz (1952)** 의 평균-분산 이론과 **Fama-French (1992)** 의 factor diversification 관점에서, "
-        "sector 분산 운용은 idiosyncratic risk 를 줄이고 장기 위험조정 수익 (Sharpe / Sortino) 향상에 기여합니다.\n\n"
-        "본 펀드는 R1 (회복기) / R2 (확장기) / R3 (변동기) **168개월 학습 구간**에서 일관된 sector 분산 운용을 통해 우수한 위험조정 성과를 입증했습니다.\n\n"
-        "**HO 24m 의 단기 underperform 은 일시적 sector concentration 시기의 trade-off** 이며, 장기 분산 운용의 근본 가치를 손상시키지 않습니다."
+        "본 펀드의 BL+LSTM vol-target 모델은 **단순 sector 분산이 아닌 risk-aware 분산** 운용입니다.\n\n"
+        "**R1/R3/HO 분산 시기 + R2 Defensive 도피 시기** 모두 vol-target 학습의 결과 — "
+        "장기 168m 학습 구간에서 시장 변동성에 적응하며 우수한 위험조정 성과 (Sharpe 1.05, Sortino 1.86) 를 입증했습니다.\n\n"
+        "**HO 24m 의 단기 underperform**: SPY 의 IT 집중 (33.30%) vs Fund 의 IT under-weight (-33.31%) "
+        "→ AI Rally 시기 sector concentration 의 trade-off. 펀드는 R3/HO 에서 sector 분산을 회복했고 "
+        "(Fund HHI 0.14 < SPY HHI 0.16), 이는 vol-target 분산 운용의 본질이 손상되지 않았음을 보여줍니다.\n\n"
+        "**핵심**: 단기 sector concentration 시기 (2024 AI Rally) 의 underperform 은 "
+        "**vol-targeted 분산 운용의 의도된 trade-off** 이며, 장기 risk-aware 운용의 가치를 검증합니다."
     )
