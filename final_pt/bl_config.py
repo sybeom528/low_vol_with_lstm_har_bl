@@ -54,7 +54,7 @@ BASELINE = {
     'q_value'     : 0.003,              # 월 0.3% (연 3.6%)
     'omega_mode'  : 'he_litterman',     # τ·P·Σ·P^T
     'prior'       : 'capm_mcap',        # 시총가중 균형수익률
-    'tc'          : 0.003,              # 30bp
+    'tc'          : 0.002,              # 20bp (per-side, two-way: turnover × 0.002 per month)
     'max_weight'  : 0.10,
     'lstm_pred_path': str(_LSTM_PRED_DEFAULT),
 }

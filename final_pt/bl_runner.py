@@ -290,7 +290,7 @@ def walk_forward(
         'weights', 'comp', 'meta', 'errors'
     """
     name     = cfg.get('name', 'unnamed')
-    tc       = cfg.get('tc', 0.003)
+    tc       = cfg.get('tc', 0.002)   # BASELINE 과 일치 (20bp per-side)
     max_w    = cfg.get('max_weight', 0.10)
     p_weight = cfg.get('p_weight', 'mcap')
     lstm_monthly = lstm_state.get('monthly') if lstm_state else None
