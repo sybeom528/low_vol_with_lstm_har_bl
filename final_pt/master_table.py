@@ -1,5 +1,5 @@
 """
-master_table.py — 156개 실험을 한 DataFrame으로 통합 (2026-05-07).
+master_table.py — 90개 실험을 한 DataFrame으로 통합.
 
 results/*.pkl 전부 로드 → config dict 파싱 → 표준 토큰 + 성과지표.
 파일명 그대로 유지하고, 분석은 canonical 컬럼 기준으로 통일.
@@ -30,57 +30,44 @@ PRIOR_SHORT = {
     'capm_rp'  : 'rp',
 }
 PMODE_SHORT = {
-    'trailing_vol21' : 'tr',
-    'trailing_vol252': 'tr252',
     'lstm_predicted' : 'ls',
 }
 PWEIGHT_SHORT = {
-    'mcap'    : 'mcap',
-    'eq'      : 'eq',
-    'rp'      : 'rp',
-    'vol_mcap': 'volm',
+    'mcap': 'mcap',
+    'eq'  : 'eq',
+    'rp'  : 'rp',
 }
 QMODE_SHORT = {
-    'fixed'           : 'fix',
-    'lambda'          : 'lam',
-    'inv_lambda'      : 'inv',
-    'raw_lam'         : 'raw',
-    'vol_spread'      : 'vsp',
-    'ff3_paper'       : 'ff3',
-    'ff3_regression'  : 'ff3reg',
-    'realized_spread' : 'rsp',
-    'regime'          : 'reg',
-    'hrp'             : 'hrp',
-    'capm'            : 'capm',
-    'none'            : 'none',
+    'fixed'     : 'fix',
+    'lambda'    : 'lam',
+    'inv_lambda': 'inv',
+    'raw_lam'   : 'raw',
+    'vol_spread': 'vsp',
 }
 OMEGA_SHORT = {
     'he_litterman': 'he',
-    'rmse'        : 'rms',
     'ff3_paper'   : 'pap',
-    # 'scaled' 모드는 2026-05-07 제거 (신뢰성 부족)
 }
 
 
-def _omega_short(omega_mode: str, omega_scale: float = 1.0) -> str:
-    """omega_mode → 약어. omega_scale 인자는 deprecated (호환성용)."""
+def _omega_short(omega_mode: str) -> str:
+    """omega_mode → 약어."""
     return OMEGA_SHORT.get(omega_mode, omega_mode)
 
 
 def parse_config(cfg: dict) -> dict:
     """config dict → 슬롯 + 약어 + canonical name."""
     prior   = cfg.get('prior',       'capm_mcap')
-    p_mode  = cfg.get('p_mode',      'trailing_vol21')
+    p_mode  = cfg.get('p_mode',      'lstm_predicted')
     p_wt    = cfg.get('p_weight',    'mcap')
     q_mode  = cfg.get('q_mode',      'fixed')
     om_mode = cfg.get('omega_mode',  'he_litterman')
-    om_scl  = cfg.get('omega_scale', 1.0)
 
     pr_s = PRIOR_SHORT.get(prior,   prior)
     pm_s = PMODE_SHORT.get(p_mode,  p_mode)
     pw_s = PWEIGHT_SHORT.get(p_wt,  p_wt)
     q_s  = QMODE_SHORT.get(q_mode,  q_mode)
-    om_s = _omega_short(om_mode, om_scl)
+    om_s = _omega_short(om_mode)
 
     return {
         # 원본 슬롯
@@ -89,7 +76,6 @@ def parse_config(cfg: dict) -> dict:
         'p_weight'   : p_wt,
         'q_mode'     : q_mode,
         'omega_mode' : om_mode,
-        'omega_scale': om_scl,
         'tc'         : cfg.get('tc',         0.003),
         'max_weight' : cfg.get('max_weight', 0.10),
         # 약어 토큰
@@ -189,7 +175,7 @@ def build_master_table(
     -------
     DataFrame columns:
       이름/메타  : name, canonical, prior_s, p_s, pw_s, q_s, om_s,
-                   prior, p_mode, p_weight, q_mode, omega_mode, omega_scale, tc, max_weight
+                   prior, p_mode, p_weight, q_mode, omega_mode, tc, max_weight
       성과(전체) : sharpe, sortino, cagr, vol, mdd, calmar, cvar_5, win_rate,
                    beta, alpha, mdd_duration
       포트폴리오 : turnover_avg, eff_n_avg, n_months

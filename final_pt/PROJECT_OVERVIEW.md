@@ -15,8 +15,8 @@
 3. LSTM HPO             ✅ 03a_LSTM_Optuna_GridSearch.ipynb     — V4_BEST_CONFIG 정당화 (Optuna 12-trial)
 3. LSTM σ 예측           ✅ 03b_Volatility_Forecasting.ipynb     — LSTM + HAR + Performance ensemble (617 종목 stockwise)
 4. Black-Litterman       ✅ 04_BL_Walkforward.ipynb (walk_forward)
-5. MVO + 위험성향 매핑    🟡 99_analyze.ipynb (분석 진행 중)
-6. 3-레짐 안정성 + 민감도  ✅ 99_analyze.ipynb (I/J/K/L/M/N)
+5. MVO + 위험성향 매핑    🟡 05b_Analyze.ipynb (분석 진행 중)
+6. 3-레짐 안정성 + 민감도  ✅ 05b_Analyze.ipynb (I/J/K/L/M/N)
 7. Streamlit 대시보드     🟡 streamlit_dashboard/ (초안 진행 중)
 ```
 
@@ -31,11 +31,11 @@ final_pt/
 ├── 02b_Low_Risk_Anomaly.ipynb         ← 횡단면 EDA (저변동 anomaly 6단 검증)
 ├── 03a_LSTM_Optuna_GridSearch.ipynb   ← HPO 보조 (12-trial Optuna → V4_BEST_CONFIG)
 ├── 03b_Volatility_Forecasting.ipynb   ← LSTM 학습 + HAR baseline + Diebold-Pauly ensemble
-├── 05_Statistical_Validation.ipynb    ← 학술 통계 심화 분석
-├── HMM_Regime.ipynb                   ← 3-레짐 HMM 분류
+├── 07_Statistical_Validation.ipynb    ← 학술 통계 심화 분석
+├── 05a_05a_HMM_Regime.ipynb                   ← 3-레짐 HMM 분류
 │
 ├── 04_BL_Walkforward.ipynb                       ← walk_forward 실행 → results/*.pkl
-├── 99_analyze.ipynb                   ← 분석 (K_CUT → I → J → K → L → M → N)
+├── 05b_Analyze.ipynb                   ← 분석 (K_CUT → I → J → K → L → M → N)
 ├── 99_slot_effects.ipynb              ← 슬롯 차원 효과 라인플롯 (pivot CSV 자동 생성)
 │
 ├── timeseries_lib.py                  ← 시계열·통계 함수 (LSTM, HAR-RV, ensemble, 통계 검정)
@@ -47,7 +47,7 @@ final_pt/
 │
 ├── _evidence/                         ← 03a Optuna 캐시 (lstm_optuna_v4/best_metrics.json)
 ├── data/                              ← 01 산출물 (monthly_panel, daily_returns, macro, FF 등)
-├── phase3(data_outputs)/data/         ← 03b 산출물 (ensemble_predictions_stockwise.csv)
+├── data/03b_lstm/data/         ← 03b 산출물 (ensemble_predictions_stockwise.csv)
 ├── results/                           ← 156 BL pkl
 ├── outputs/                           ← 차트 PNG
 └── streamlit_dashboard/               ← Streamlit 앱 (초안)
@@ -65,7 +65,7 @@ final_pt/
 | Q·PCT 민감도 분석 (winner 슬롯) | [SENSITIVITY_ANALYSIS.md](SENSITIVITY_ANALYSIS.md) |
 | 학술 reference (Pyo & Lee 2018) | [Exploiting_LowRisk_Anomaly_BL_Summary.md](Exploiting_LowRisk_Anomaly_BL_Summary.md) |
 | 4차 LSTM 재학습 검증 | [_validation_report_2026_05_08.md](_validation_report_2026_05_08.md) |
-| 분석 노트북 셀 해설 | `99_analyze.ipynb` 안 markdown 셀 |
+| 분석 노트북 셀 해설 | `05b_Analyze.ipynb` 안 markdown 셀 |
 
 ---
 

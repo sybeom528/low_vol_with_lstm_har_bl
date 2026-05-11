@@ -30,7 +30,7 @@ User-facing API
 
 설계 — final_pt 단독 완결
 -------------------------
-모든 입력 데이터는 final_pt/data + final_pt/phase3(data_outputs)/data 만 사용.
+모든 입력 데이터는 final_pt/data + final_pt/data/03b_lstm/data 만 사용.
 fold csv 가 final_pt/phase3 에 .csv 또는 .csv.gz 형태로 있으면 자동 활용.
 외부 폴더 의존성 없음.
 """
@@ -526,7 +526,7 @@ def prepare_incremental_state(out_dir: str | Path,
 
     Parameters
     ----------
-    out_dir : final_pt/phase3(data_outputs)/data 등
+    out_dir : final_pt/data/03b_lstm/data 등
     fallback_search_paths : list of Path | None, default None
         fold csv 가 out_dir 에 없을 때 검색할 외부 경로 후보.
         None 시 외부 fallback 없음 — final_pt/phase3 의 .csv.gz 자동 해제 후 사용.
