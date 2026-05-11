@@ -226,6 +226,49 @@
   - 모든 페이지 코드 변경 없이 자동 반영
   - `tc_override=None` 으로 검증 / 디버깅 가능
   - dashboard 표기 ("편측 20bp") 와 실제 적용 일치
+- **🔄 후속 변경 (같은 날 2026-05-12, commit `a1e7122` — Merge PR #44)**:
+  - 팀원이 final 측에서 pkl 매트릭스 자체를 tc=0.002 (편측 20bp) 로 통일 push
+  - 변경: `final_pt/bl_config.py` + `bl_runner.py` tc 통일 / `streamlit_dashboard/data/results/*.pkl` 매트릭스 재산출 (156 → 90 정리)
+  - dashboard 의 TC override 로직은 **idempotent** 하게 설계되어 있음:
+    `needs_recompute = abs(tc_override − original_tc) > 1e-9`
+  - 새 pkl 의 `config["tc"] = 0.002` + `tc_override = 0.002` (default) → **`needs_recompute = False` → 재산출 skip → pkl.ret 그대로 사용**
+  - **결과**: dashboard 표시값 변화 없음 (idempotency 입증)
+  - 위 narrative 의 일부 표현은 도입 시점 (편측 10bp pkl 환경) 의 사실로, 후속 변경 후 현재 환경에서는 의미가 다음과 같이 변화:
+    - ~~"pkl 재실행은 불필요"~~ → 팀원이 pkl 재실행하여 통일함 (그러나 dashboard idempotent 로 무영향)
+    - ~~"SCENARIO 2: `tc_override=None` 시 원본 (편측 10bp) 보존"~~ → 현재 환경에서는 None 시 pkl 원본 (편측 20bp) 보존
+    - ~~"SCENARIO 3: `tc_override=0.001` 명시 시 원본과 동일"~~ → 현재 환경에서는 0.001 명시 시 재산출되어 편측 10bp 검증값 산출
+  - **TC override 로직은 안전망으로 유지** (향후 다른 tc 값 검증 / 의도 재변경 시 즉시 적용 가능)
+
+### 팀원 pkl 매트릭스 tc 통일 검증 (commit `a1e7122`)
+- **카테고리**: Data / Validation
+- **상황**: 본 세션 (2026-05-12) 의 dashboard TC override 도입 직후, 팀원이 final 측에서 pkl 자체의 tc 를 0.002 (편측 20bp) 로 통일하여 push (Merge PR #44 — `cf948b9`)
+- **변경 내역 (팀원 측)**:
+  - `final_pt/bl_config.py` + `bl_runner.py` : tc 0.001 → 0.002 통일
+  - `streamlit_dashboard/data/results/*.pkl` 매트릭스 재산출 : **156 → 90** (rms / baseline / prior / q / p 시리즈 제거, 핵심 BL+LSTM 모델만 유지)
+  - `mat_eq_eq_raw_pap.pkl` (Top 1) 도 갱신 (952KB → 951KB)
+  - SPY NaN 은 **미수정** (2024-12-31, 2025-12-31 잔존 — dashboard `_fill_spy_ret_nan` 안전망 그대로 유효)
+- **dashboard 영향 검증 (옵션 A 1-3단계, 본 세션)**:
+  - **1단계** `git pull --ff-only` : `4f45e02 → cf948b9` (2 commit 추가, fast-forward)
+  - **2단계** 새 pkl 메타데이터 확인:
+    - `config["tc"] = 0.002` 정확 갱신 ✅
+    - `ret.mean = 0.01252` / `gross_ret.mean = 0.01450` / 차이 = `0.9891 (turnover.mean) × 0.002` = 정확히 net 산식 정합 ✅
+    - `spy_ret` NaN 2개 잔존 (예상대로) → dashboard 보강 안전망 동작 ✅
+    - `weights.shape = (192, 592)` 정상
+  - **3단계** Streamlit 시각 확인 (Overview 페이지):
+    - **TEST 168m**: CAGR +16.25% / Sortino 1.826 / Beta 0.752 / Alpha +5.52% — final 표 (`Sortino 1.826 / CAGR 16.25% / Beta 0.753 / Alpha +5.51%`) 와 완벽 정합
+    - **HO 24m**: CAGR +7.20% / MDD -8.95% / SPY +21.07% / Active -13.87%p — 본 세션 TC override 도입 시점 검증값과 완벽 정합
+    - **HO Cumulative Return +14.92%** = (1.072)² − 1 = 14.92% — 산식 정합
+- **dashboard idempotency 검증**:
+  - 새 pkl `config["tc"] = 0.002` + dashboard `tc_override = 0.002` (default)
+  - `abs(0.002 - 0.002) > 1e-9 = False` → `needs_recompute = False`
+  - **재산출 skip → pkl.ret 그대로 사용 → 결과 동일**
+- **모델 동일성 결론**:
+  - 팀원의 pkl 통일은 **tc 만 갱신**, BL / LSTM / weights / gross_ret 등 모델 본질 변경 없음 (TEST 168m 메트릭이 final 표와 완벽 정합한 사실로 입증)
+  - 단지 pkl 매트릭스가 156 → 90 으로 정리됨 (dashboard 가 특정 모델 `mat_eq_eq_raw_pap` 만 호출하는 로직이라 회귀 위험 없음)
+- **영향 파일**:
+  - `lib/data_loader.py` (docstring 의 TC override narrative 보강 — 후속 변경 반영, 코드 로직 자체는 변경 없음)
+  - 본 `updatelog.md` (TC override 박스 끝 후속 변경 섹션 + 본 신규 항목 추가)
+  - 다른 docs 는 변경 불필요 (5개 docs 의 "편측 10bp → 20bp" narrative 는 도입 시점 사실로 보존됨, 본 후속 변경은 dashboard 표시값 무영향)
 
 ### lib/backtesting_charts.py 미사용 함수 cleanup (옵션 A — 완전 제거)
 - **카테고리**: Code Structure / Cleanup

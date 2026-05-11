@@ -267,22 +267,29 @@ def load_fund_results(
 
     대시보드 사본 (Top 1) 우선, 없으면 final 원본 fallback.
 
-    ── TC override (2026-05-12) ─────────────────────────────────────────
-    원본 pkl 은 tc=0.001 (편측 10bp/side) 로 산출되었으나, 펀드의 의도된
+    ── TC override (2026-05-12, 안전망 역할로 유지) ──────────────────────
+    [도입 시점 narrative]
+    원래 pkl 은 tc=0.001 (편측 10bp/side) 로 산출되었으나, 펀드의 의도된
     보수적 거래비용 가정은 편측 20bp (tc=0.002) 였습니다. 차후 의도가 변경
     되었으나 원본 backtest 는 재실행하지 않고, **대시보드 사용 시점에 net
-    재산출** 하는 방식으로 의도값을 반영합니다.
+    재산출** 하는 방식으로 의도값을 반영하도록 도입.
 
-    재산출 산식:
+    [후속 변경 (2026-05-12, commit a1e7122)]
+    팀원이 final 측에서 pkl 매트릭스 자체를 tc=0.002 로 통일 push. 이후
+    pkl 의 `config["tc"]` 가 이미 0.002 이므로 본 함수의 `needs_recompute`
+    체크가 False 가 되어 **재산출 skip → pkl.ret 그대로 사용**.
+    본 로직은 **안전망**으로 유지 (다른 tc 값 검증 / 향후 의도 재변경 대응).
+
+    재산출 산식 (needs_recompute = True 일 때만 동작):
         net_ret = gross_ret − turnover × tc_override
         (turnover 는 two-way Σ|Δw| ∈ [0, 2], tc 는 편측 rate)
 
-    tc_override 파라미터:
-      - 0.002 (기본, 편측 20bp) — 펀드의 의도된 보수적 가정
-      - 0.001                  — pkl 원본 (편측 10bp)
-      - None                   — pkl 원본 그대로 사용 (검증/디버깅용)
+    tc_override 파라미터 (현재 환경 = pkl tc=0.002 기준):
+      - 0.002 (기본) — pkl 원본과 동일 → 재산출 skip (idempotent)
+      - 0.001        — 편측 10bp 로 재산출 (검증/실험용)
+      - None         — pkl 원본 그대로 사용 (디버깅용)
 
-    재산출 후 `config["tc"]` 는 새 값으로 갱신되고, 원본 tc 는
+    재산출 시 `config["tc"]` 는 새 값으로 갱신되고, 원본 tc 는
     `config["tc_original_in_pkl"]` 로 보존됩니다.
 
     ── SPY NaN 보강 (2026-05-12) ──────────────────────────────────────────
