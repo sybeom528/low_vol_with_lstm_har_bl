@@ -2,10 +2,10 @@
 bl_runner.py — Black-Litterman walk-forward 실행 엔진
 
 04_BL_Walkforward.ipynb 의 dispatcher + monthly_cache + walk_forward 를
-재사용 가능한 모듈로 분리. 99_analyze.ipynb 에서 sensitivity sweep
-(winner_q, winner_pct) 을 in-notebook 으로 돌릴 때 import 해서 사용.
+재사용 가능한 모듈로 분리. 05b_Analyze.ipynb 에서 Q/PCT_GROUP sensitivity
+sweep 을 in-notebook 으로 돌릴 때도 동일 모듈 import 해서 사용.
 
-사용 예 (04 또는 99_analyze 안):
+사용 예 (04 또는 05b_Analyze 안):
     from bl_runner import load_lstm_pred, build_monthly_cache, walk_forward
 
     # 1. LSTM 예측 로드
@@ -54,7 +54,7 @@ def load_lstm_pred(
 
     Returns dict:
         - 'available': bool
-        - 'preds': DataFrame indexed by (date, ticker) — omega_rmse 용 (현재 미사용)
+        - 'preds': DataFrame indexed by (date, ticker)
         - 'monthly': DataFrame pivot (pred_date × ticker, value=vol_pred)
     """
     lstm_path = Path(lstm_path)
@@ -89,7 +89,7 @@ def get_vol_series(
     pred_date: pd.Timestamp,
     lstm_monthly: Optional[pd.DataFrame],
 ) -> pd.Series:
-    """P 행렬에 쓸 변동성 시리즈 반환 — LSTM 예측 단일 옵션 (2026-05-11 trailing 제거)."""
+    """P 행렬에 쓸 변동성 시리즈 반환 — LSTM 예측 단일 옵션."""
     if lstm_monthly is None:
         raise RuntimeError(
             'LSTM 예측 데이터가 없습니다. '
@@ -299,7 +299,7 @@ def walk_forward(
     spy_list, err_list = [], []
     weights_history = {}
     prev_w = None
-    _op_q_prev = None   # omega_paper 상태
+    _op_q_prev = None   # ff3_paper omega 상태 (직전월 Q)
     _op_P_prev = None
     t0 = time.time()
 

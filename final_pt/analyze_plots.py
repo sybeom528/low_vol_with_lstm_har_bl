@@ -1,5 +1,5 @@
 """
-analyze_plots.py — 99_analyze.ipynb 시각화 + 심층분석 함수.
+analyze_plots.py — 05b_Analyze.ipynb 시각화 + 심층분석 함수.
 
 master_table.build_master_table()로 만든 DataFrame을 입력받음.
 원본 ret 시리즈가 필요한 함수는 results_dir에서 즉석 로드.
@@ -44,7 +44,9 @@ CRISIS_PERIODS = {
 }
 
 # ── 표준 벤치마크 ──────────────────────────────────────────────────────
-BENCHMARK_NAMES = ['baseline', 'capm_no_bl', 'naive_lowvol']
+# 비매트릭스 비교군 슬롯(baseline/capm_no_bl/naive_lowvol)은 2026-05-11 제거됨.
+# 호출 시 benchmarks 인자로 매트릭스 슬롯명을 명시적으로 전달.
+BENCHMARK_NAMES: list = []
 
 # ── 3-레짐 라벨 (HMM n=3 기반, master_table.REGIMES 동기) ─────────────
 REGIME_LABELS = ['R1_회복', 'R2_확장', 'R3_변동']
@@ -96,7 +98,7 @@ def plot_marginal_effects(
 
     slot_label = {
         'prior_s': 'Prior (시장균형)',
-        'p_s'    : 'P 변동성 (trailing/LSTM)',
+        'p_s'    : 'P 변동성 (LSTM)',
         'pw_s'   : 'P 가중치',
         'q_s'    : 'Q 모드',
         'om_s'   : 'Omega 모드',
