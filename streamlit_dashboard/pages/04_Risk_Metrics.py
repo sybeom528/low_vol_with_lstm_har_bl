@@ -1,18 +1,20 @@
 """
-pages/04_Risk_Metrics.py - Risk Metrics 페이지 (9 영역)
+pages/04_Risk_Metrics.py - Risk Metrics 페이지 (11 영역)
 
 위험 지표 전담 페이지. Performance 가 수익 위주라면 Risk Metrics 는 위험 위주.
 
-9 영역:
+11 영역:
   1. Header
   2. Sub-header
   3. Risk Summary KPI 5개 (Vol / MDD / Beta / R² / TE)
   4. Drawdown 시계열 + Recovery Time + Top 3 표
-  5. VaR / CVaR 분포 (월별/일별 Tab + Fund vs SPY 오버레이 + 정규분포 비교)
-  6. Volatility / Sortino / Beta / R² / TE Rolling 시계열 (Q-G 보강 — 5 메트릭 통합)
-  7. Risk Metrics 종합 표 (~22 메트릭, 카테고리 expander, CSV 다운로드)
-  8. Tail Risk 분석 (Hill estimator + Hill plot, 일별 only)
-  9. Footer
+  5. (이전) Regime 메트릭 자세한 비교 — Backtesting 페이지에서 통합 (2026-05-11)
+  6. (이전) Sub-events 분석 — 4 위기 — Backtesting 페이지에서 통합
+  7. VaR / CVaR 분포 (월별/일별 Tab + Fund vs SPY 오버레이 + 정규분포 비교)
+  8. Volatility / Sortino / Beta / R² / TE Rolling 시계열 (Q-G 보강 — 5 메트릭 통합)
+  9. Risk Metrics 종합 표 (~22 메트릭, 카테고리 expander, CSV 다운로드)
+  10. Tail Risk 분석 (Hill estimator + Hill plot, 일별 only)
+  11. Footer
 
 모든 메트릭 = final/bl_functions.compute_metrics + 학술 표준 (decisionlog Q-E,Q-F,Q-G).
 
@@ -21,6 +23,10 @@ pages/04_Risk_Metrics.py - Risk Metrics 페이지 (9 영역)
 
 import streamlit as st
 
+from lib.backtesting_charts import (
+    render_regime_detail_table,
+    render_sub_events,
+)
 from lib.data_loader import (
     compute_equal_weight_returns,
     compute_fund_daily_returns,
@@ -54,7 +60,7 @@ render_sidebar()
 
 
 # === 데이터 로드 ======================================================
-fund = load_fund_results()  # default = mat_eq_mcap_raw_he (최종 Top 1)
+fund = load_fund_results()  # default = mat_eq_eq_raw_pap (최종 Top 1)
 fund_ret = fund["ret"]
 fund_spy = fund["spy_ret"]
 fund_weights = fund["weights"]
@@ -85,9 +91,8 @@ render_subheader(
     title_en="Risk Metrics",
     title_ko="위험 지표",
     description=(
-        "펀드의 위험 통제 / 시장 노출 / Tail Risk 분석. "
-        "사이드바에서 기간 (FULL / TEST / HO) + 비교 벤치마크 (SPY / EW / IVW) 토글 가능. "
-        "모든 메트릭은 final/bl_functions.compute_metrics 와 정확 정합 + 학술 표준."
+        "펀드의 위험 (변동성, 손실 폭, 시장 민감도) 을 분석합니다. "
+        "사이드바에서 기간 / 비교 벤치마크 선택 가능."
     ),
 )
 
@@ -98,8 +103,8 @@ period = st.session_state.get("period", "FULL")
 # === 영역 3: Risk Summary KPI 5 ======================================
 st.subheader(f"위험 KPI — {period}")
 st.caption(
-    "Volatility / MDD / Beta / R² / Tracking Error. "
-    "위험 KPI 는 **낮을수록 좋음** (delta 음수 = green = 좋음)."
+    "**변동성 / 최대 손실 폭 (MDD) / 시장 민감도 (β) / 시장 설명력 (R²) / 추적 오차**. "
+    "위험 지표는 **낮을수록 좋습니다** — 시장 대비 차이가 음수 (녹색) 면 펀드가 더 안정적이라는 뜻입니다."
 )
 render_risk_kpi(fund_ret, fund_spy, ew_ret, ivw_ret, fund_rf, period)
 st.divider()
@@ -108,18 +113,43 @@ st.divider()
 # === 영역 4: Drawdown + Recovery Time =================================
 st.subheader("Drawdown + Recovery Time")
 st.caption(
-    "DD 시계열 (Fund + SPY) + Top 3 DD 마커 + Recovery Time 표 + 평균 DD 라인. "
-    "Top 3 = 가장 깊은 드로다운 3개 (depth 기준)."
+    "펀드와 시장의 손실 폭 (drawdown) 시계열 + 가장 컸던 손실 3개 표시. "
+    "**회복 시간** = 손실 후 다시 최고점에 도달하기까지 걸린 개월 수."
 )
 render_drawdown_recovery(fund_ret, fund_spy, period)
 st.divider()
 
 
-# === 영역 5: VaR / CVaR 분포 ==========================================
+# === 영역 5: Regime 메트릭 자세한 비교 (Backtesting 페이지에서 통합) ===
+st.subheader("Regime 메트릭 자세한 비교")
+st.caption(
+    "시장 국면별 12개 메트릭 종합 비교 — "
+    "회복기 / 확장기 / 변동기 / Hold Out / 전체. "
+    "★ 최고 국면 / 🔴 최악 국면 강조. "
+    "**전체 기간 고정** — 사이드바 기간 설정 영향 받지 않음."
+)
+render_regime_detail_table(fund_ret, fund_spy, fund_rf)
+st.divider()
+
+
+# === 영역 6: Sub-events 분석 — 4 위기 (Backtesting 페이지에서 통합) ====
+st.subheader("Sub-events 분석 — 4 위기")
+st.caption(
+    "**4가지 시장 위기**: 2018년 4분기 급락 / COVID-19 / 2022년 인플레이션 약세장 / 2024년 섹터 로테이션. "
+    "각 위기에서 펀드의 시장 대비 대응 분석. "
+    "**전체 기간 고정** — 사이드바 기간 설정 영향 받지 않음."
+)
+render_sub_events(fund_ret, fund_spy, fund_rf)
+st.divider()
+
+
+# === 영역 7: VaR / CVaR 분포 ==========================================
 st.subheader("VaR / CVaR 분포")
 st.caption(
-    "월별/일별 Tab + Fund vs SPY 오버레이 히스토그램 + 정규분포 비교 라인 + VaR/CVaR 임계선. "
-    "VaR 5% / CVaR 5% (Historical method, pandas.quantile) — final compute_metrics.cvar_5 정합."
+    "수익률 분포 + 펀드 vs 시장 비교 + 정규분포 곡선 + VaR/CVaR 표시 (**일별 데이터, ~4,000 영업일**). "
+    "**VaR 5%** = 95% 확률로 손실이 이 값을 넘지 않음 (= 가장 나쁜 5% 시나리오의 경계). "
+    "**CVaR 5%** = 최악 5% 시나리오의 평균 손실 (VaR 보다 보수적). "
+    "월별 (192 sample) 은 5% 분위수가 단 ~10개로 통계 신뢰성 낮아 학술 표준 (일별) 만 표시합니다."
 )
 
 # 일별 portfolio (영역 5, 8 공유 — 한 번 산출)
@@ -144,12 +174,15 @@ render_var_cvar_distribution(
 st.divider()
 
 
-# === 영역 6: Rolling 5 메트릭 (Q-G 보강) ==============================
+# === 영역 8: Rolling 5 메트릭 (Q-G 보강) ==============================
 st.subheader("Rolling 위험 메트릭 — Volatility / Sortino / Beta / R² / TE")
 st.caption(
-    "5 메트릭 통합 rolling 시계열 (Q-G 결정 보강). Hero KPI sparkline 제거 보강. "
-    "Window 토글 (12 / 36 / 60m, **36m 권장 — Sortino 분모 안정성**). "
-    "Beta < 0 시 R² 함께 확인 (신뢰성 평가, R6-6)."
+    "5개 메트릭 (변동성 / Sortino / β / R² / 추적오차) 시계열. "
+    "윈도우 선택 (1년 / 3년 / 5년, **3년 권장** — 안정적 산출). "
+    "**비교선**: 사이드바에서 SPY/균등가중/역변동성 토글 시 함께 표시 — "
+    "**Vol/Sortino** (절대 메트릭) = 각 벤치마크의 자체 값 / "
+    "**β/R²/TE** (SPY 기준 메트릭) = EW/IVW 의 SPY 대비 값 (펀드의 SPY 추적 특성과 직접 비교). "
+    "β 가 음수일 때는 R² (시장 설명력) 함께 확인."
 )
 col_w = st.columns([1, 5])
 with col_w[0]:
@@ -160,29 +193,28 @@ with col_w[0]:
 
 if rolling_window == 12:
     st.caption(
-        "⚠️ **12m window 한계**: 일부 시점에서 음수 수익률 < 2 → Sortino 분모 산출 불가 (NaN 끊김), "
-        "또는 음수 수익률 < 5 → 분모 매우 작아 spike 발생. 학술적으로 정확하지만 시각적 변동 큼. "
-        "안정적 해석을 위해 **36m 사용 권장** (Sortino & Price 1994)."
+        "⚠️ **1년 윈도우 주의**: 기간이 짧아 일부 시점에서 Sortino 값이 끊기거나 급변할 수 있습니다. "
+        "안정적 해석을 위해 **3년 사용 권장**."
     )
-render_rolling_risk_metrics(fund_ret, fund_spy, fund_rf, period, rolling_window)
+render_rolling_risk_metrics(fund_ret, fund_spy, ew_ret, ivw_ret, fund_rf, period, rolling_window)
 st.divider()
 
 
-# === 영역 7: Risk Metrics 종합 표 ====================================
+# === 영역 9: Risk Metrics 종합 표 ====================================
 st.subheader(f"위험 메트릭 종합 표 — {period}")
 st.caption(
-    "~20 메트릭 카테고리 expander (Performance Returns / Risk-adj / Risk / Market Exposure "
-    "/ Distribution). CSV 다운로드 가능. Final compute_metrics 정합 메트릭 + 학술 표준 메트릭."
+    "20여 개 메트릭을 5개 카테고리로 (수익률 / 위험조정 / 위험 / 시장 노출 / 분포) 정리. "
+    "펼치기로 카테고리 상세 + CSV 다운로드 가능."
 )
 render_risk_metrics_table(fund_ret, fund_spy, ew_ret, ivw_ret, fund_rf, period)
 st.divider()
 
 
-# === 영역 8: Tail Risk (Hill estimator) ===============================
+# === 영역 10: Tail Risk (Hill estimator) ==============================
 st.subheader("Tail Risk 분석 — Hill Estimator")
 st.caption(
-    "분포 tail 두께 측정 (일별 only). Hill (1975) 학술 표준. "
-    "ξ̂ > 0 = fat tail (극단 손실). 펀드 ξ̂ < SPY ξ̂ → tail risk 적음."
+    "수익률 분포의 꼬리 (극단값) 두께 측정 (일별 데이터). "
+    "펀드의 꼬리 추정치가 시장보다 작으면 **극단적 손실 위험이 시장보다 적다** 는 의미입니다."
 )
 render_tail_risk(
     fund_ret_daily=fund_daily,
@@ -190,5 +222,5 @@ render_tail_risk(
 )
 
 
-# === 영역 9: Footer ===================================================
+# === 영역 11: Footer ==================================================
 render_footer()

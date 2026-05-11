@@ -1,15 +1,16 @@
 """
-lib/performance_charts.py - Performance 페이지 6 영역 차트 함수
+lib/performance_charts.py - Performance 페이지 7 영역 차트 함수
 
-영역 3-8 모두 함수화:
+영역 3-9 모두 함수화 (2026-05-11 영역 4 신규 추가):
   - 영역 3: render_performance_kpi (CAGR / Sortino / Sharpe / IR / Active Return)
-  - 영역 4: render_annual_returns (사이드바이 막대 + 평균선 + Q-Zoom)
-  - 영역 5: render_active_return_analysis (위 막대 + 아래 이중 축 Rolling)
-  - 영역 6: render_rolling_return (1y/3y/5y 다중 + Regime 배경)
-  - 영역 7: render_regime_heatmap (Tab 전환 + diverging colormap)
-  - 영역 8: render_distribution_stats (일별/월별 + vs Tab + KDE mini)
+  - 영역 4: render_cumulative_only (★ 신규 — 누적 수익률 단일 차트)
+  - 영역 5: render_annual_returns (사이드바이 막대 + 평균선)
+  - 영역 6: render_active_return_analysis (위 막대 + 아래 이중 축 Rolling)
+  - 영역 7: render_rolling_return (1y/3y/5y 다중 + Regime 배경)
+  - 영역 8: render_regime_heatmap (Tab 전환 + diverging colormap)
+  - 영역 9: render_distribution_stats (일별 only, 2026-05-11 단순화)
 
-모든 메트릭은 final/bl_functions + master_table 정확 재현 (decisionlog Q-E).
+모든 메트릭은 final/bl_functions + master_table 정확 재현.
 
 참조: docs/plan/03_pages/03_performance.md, decisionlog/03_performance.md
 """
@@ -121,115 +122,222 @@ def render_performance_kpi(
 
     from lib.tooltips import get_tooltip
 
-    def _label(text: str, tip_key: str) -> str:
-        """카드 라벨 + tooltip ⓘ HTML."""
-        tip = get_tooltip(tip_key) or ""
-        if not tip:
-            return f"**{text}**"
-        return (
-            f'<div style="font-weight:700;">{text}'
-            f'<span title="{tip}" style="cursor:help;color:#9CA3AF;font-size:11px;'
-            f'margin-left:6px;border:1px solid #374151;border-radius:50%;'
-            f'width:14px;height:14px;display:inline-flex;align-items:center;'
-            f'justify-content:center;">ⓘ</span></div>'
-        )
+    # SPY = primary delta 기준 (활성 시), 추가 벤치마크는 caption 으로
+    has_spy = "SPY" in benchmarks
+    spy_bench = benchmarks.get("SPY")
 
     cols = st.columns(5)
 
     # 카드 1: CAGR (Net + Gross + TC 누적)
     with cols[0]:
-        st.markdown(_label("CAGR", "Net CAGR"), unsafe_allow_html=True)
-        st.markdown(f"## {_format_pct(cagr, plus_sign=True)}")
+        spy_cagr_delta = None
+        if has_spy:
+            bench_cagr_spy = mc.calc_cagr_subperiod(spy_bench, s, e)
+            spy_cagr_delta = cagr - bench_cagr_spy
+        st.metric(
+            label="CAGR",
+            value=_format_pct(cagr, plus_sign=True),
+            delta=(
+                f"{_format_pct(spy_cagr_delta, plus_sign=True)} vs SPY"
+                if spy_cagr_delta is not None else None
+            ),
+            help=get_tooltip("Net CAGR") or "Net 연환산 수익률 (TC 차감 후)",
+        )
+        # 추가 벤치마크 (EW / IVW) delta
         for name, bench in benchmarks.items():
+            if name == "SPY":
+                continue
             bench_cagr = mc.calc_cagr_subperiod(bench, s, e)
-            delta = cagr - bench_cagr
-            color = _delta_color(delta)
-            st.markdown(
-                f'<div style="font-size:12px;color:{color};">'
-                f'vs {name} {_format_pct(delta, plus_sign=True)}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-        # B-1: Gross + TC 누적 (작은 회색 글씨)
+            d = cagr - bench_cagr
+            st.caption(f"vs {name} {_format_pct(d, plus_sign=True)}")
+        # B-1: Gross + TC 누적
         if cagr_gross is not None and not pd.isna(cagr_gross):
             tc_diff = cagr_gross - cagr
-            st.markdown(
-                f'<div style="font-size:11px;color:{COLORS["text_muted"]};margin-top:6px;'
-                f'border-top:1px solid #374151;padding-top:4px;">'
-                f'Gross {_format_pct(cagr_gross, plus_sign=True)}<br>'
-                f'TC -{_format_pct(tc_diff)} (One-way 20bp)'
-                f'</div>',
-                unsafe_allow_html=True,
+            st.caption(
+                f"Gross {_format_pct(cagr_gross, plus_sign=True)} · "
+                f"TC -{_format_pct(tc_diff)} (편측 20bp = 0.20%/거래)"
             )
 
     # 카드 2: Sortino
     with cols[1]:
-        st.markdown(_label("Sortino", "Sortino"), unsafe_allow_html=True)
-        st.markdown(f"## {_format_ratio(sortino)}")
+        spy_sortino_delta = None
+        if has_spy:
+            bench_sortino_spy = mc.calc_sortino_subperiod(spy_bench, rf, s, e)
+            spy_sortino_delta = sortino - bench_sortino_spy
+        st.metric(
+            label="Sortino",
+            value=_format_ratio(sortino),
+            delta=(
+                f"{('+' if spy_sortino_delta > 0 else '')}{spy_sortino_delta:.2f} vs SPY"
+                if spy_sortino_delta is not None else None
+            ),
+            help=get_tooltip("Sortino") or "하방위험 조정 수익률",
+        )
         for name, bench in benchmarks.items():
+            if name == "SPY":
+                continue
             bench_sortino = mc.calc_sortino_subperiod(bench, rf, s, e)
-            delta = sortino - bench_sortino
-            color = _delta_color(delta)
-            st.markdown(
-                f'<div style="font-size:12px;color:{color};">'
-                f'vs {name} {("+" if delta > 0 else "")}{delta:.2f}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+            d = sortino - bench_sortino
+            st.caption(f"vs {name} {('+' if d > 0 else '')}{d:.2f}")
 
     # 카드 3: Sharpe
     with cols[2]:
-        st.markdown(_label("Sharpe", "Sharpe"), unsafe_allow_html=True)
-        st.markdown(f"## {_format_ratio(sharpe)}")
-        for name, bench in benchmarks.items():
-            bench_sharpe = mc.calc_sharpe_subperiod(bench, rf, s, e)
-            delta = sharpe - bench_sharpe
-            color = _delta_color(delta)
-            st.markdown(
-                f'<div style="font-size:12px;color:{color};">'
-                f'vs {name} {("+" if delta > 0 else "")}{delta:.2f}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    # 카드 4: IR (active vs SPY 기준 — 다른 벤치마크는 추가행)
-    with cols[3]:
-        st.markdown(_label("IR", "IR"), unsafe_allow_html=True)
-        st.markdown(f"## {_format_ratio(ir_spy)}")
-        st.caption("vs SPY")
-        # 다른 벤치마크 활성 시 추가 IR
+        spy_sharpe_delta = None
+        if has_spy:
+            bench_sharpe_spy = mc.calc_sharpe_subperiod(spy_bench, rf, s, e)
+            spy_sharpe_delta = sharpe - bench_sharpe_spy
+        st.metric(
+            label="Sharpe",
+            value=_format_ratio(sharpe),
+            delta=(
+                f"{('+' if spy_sharpe_delta > 0 else '')}{spy_sharpe_delta:.2f} vs SPY"
+                if spy_sharpe_delta is not None else None
+            ),
+            help=get_tooltip("Sharpe") or "위험 조정 수익률",
+        )
         for name, bench in benchmarks.items():
             if name == "SPY":
                 continue
-            ir_b = mc.calc_ir(filter_by_eval_period(fund_ret, eval_label),
-                              filter_by_eval_period(bench, eval_label))
-            st.markdown(
-                f'<div style="font-size:12px;color:{COLORS["text_muted"]};">'
-                f'vs {name} {_format_ratio(ir_b)}'
-                f'</div>',
-                unsafe_allow_html=True,
+            bench_sharpe = mc.calc_sharpe_subperiod(bench, rf, s, e)
+            d = sharpe - bench_sharpe
+            st.caption(f"vs {name} {('+' if d > 0 else '')}{d:.2f}")
+
+    # 카드 4: IR (vs SPY 기준)
+    with cols[3]:
+        st.metric(
+            label="IR",
+            value=_format_ratio(ir_spy),
+            delta="vs SPY",
+            delta_color="off",
+            help=get_tooltip("IR") or "Information Ratio = Active Return / Tracking Error",
+        )
+        for name, bench in benchmarks.items():
+            if name == "SPY":
+                continue
+            ir_b = mc.calc_ir(
+                filter_by_eval_period(fund_ret, eval_label),
+                filter_by_eval_period(bench, eval_label),
             )
+            st.caption(f"vs {name} {_format_ratio(ir_b)}")
 
     # 카드 5: Active Return (vs SPY 기준)
     with cols[4]:
-        st.markdown(_label("Active Return", "Active Return"), unsafe_allow_html=True)
-        st.markdown(f"## {_format_pct(active_spy, plus_sign=True)}")
-        st.caption("vs SPY (annualized)")
+        st.metric(
+            label="Active Return",
+            value=_format_pct(active_spy, plus_sign=True),
+            delta="vs SPY (annualized)",
+            delta_color="off",
+            help=get_tooltip("Active Return") or "Active Return = Fund − Benchmark (annualized)",
+        )
         for name, bench in benchmarks.items():
             if name == "SPY":
                 continue
-            active_b = mc.calc_active_return(filter_by_eval_period(fund_ret, eval_label),
-                                             filter_by_eval_period(bench, eval_label))
-            st.markdown(
-                f'<div style="font-size:12px;color:{COLORS["text_muted"]};">'
-                f'vs {name} {_format_pct(active_b, plus_sign=True)}'
-                f'</div>',
-                unsafe_allow_html=True,
+            active_b = mc.calc_active_return(
+                filter_by_eval_period(fund_ret, eval_label),
+                filter_by_eval_period(bench, eval_label),
             )
+            st.caption(f"vs {name} {_format_pct(active_b, plus_sign=True)}")
 
 
 # ======================================================================
-# 영역 4: Annual Returns 막대
+# 영역 4: 누적 수익률 (신규 — 2026-05-11)
+#   Overview 의 이중 차트 (누적 + Drawdown) 와 달리 누적만 표시.
+#   Drawdown 은 Risk Metrics 영역 4 에 별도 (책임 분리).
+# ======================================================================
+
+def render_cumulative_only(
+    fund_ret: pd.Series,
+    spy_ret: pd.Series,
+    ew_ret: pd.Series | None,
+    ivw_ret: pd.Series | None,
+    show_log: bool,
+    period: str,
+) -> None:
+    """
+    Performance 영역 4: 단일 누적 수익률 차트 (Drawdown 제외).
+
+    Overview 의 이중 차트와 다른 점:
+      - Drawdown 없음 (Risk Metrics 페이지 영역 4 에 별도)
+      - 사이드바 기간 토글 (TEST / Hold Out / FULL) 에 따라 줌인/줌아웃
+      - Hero KPI 와 달리 period 영향 받음
+
+    Args:
+        fund_ret: 펀드 월별 수익률
+        spy_ret: SPY 월별 수익률
+        ew_ret / ivw_ret: 벤치마크 (None 가능)
+        show_log: True 면 Y축 log scale
+        period: "FULL" / "TEST" / "HO"
+    """
+    eval_label = _period_to_eval_label(period)
+
+    # 기간 필터
+    fund_filt = filter_by_eval_period(fund_ret, eval_label)
+    spy_filt = filter_by_eval_period(spy_ret, eval_label) if spy_ret is not None else None
+    ew_filt = filter_by_eval_period(ew_ret, eval_label) if ew_ret is not None else None
+    ivw_filt = filter_by_eval_period(ivw_ret, eval_label) if ivw_ret is not None else None
+
+    fig = go.Figure()
+
+    # Fund 누적 (필수)
+    fund_cum = (1 + fund_filt.fillna(0)).cumprod()
+    fig.add_trace(go.Scatter(
+        x=fund_cum.index, y=fund_cum.values,
+        name="Fund (Adaptive VolControl)",
+        line=dict(color=BENCHMARK_COLORS["Fund"], width=2.5),
+    ))
+
+    # SPY (사이드바 토글에 따라)
+    if spy_filt is not None and len(spy_filt) > 0 and st.session_state.get("show_spy", True):
+        spy_cum = (1 + spy_filt.fillna(0)).cumprod()
+        fig.add_trace(go.Scatter(
+            x=spy_cum.index, y=spy_cum.values,
+            name="SPY",
+            line=dict(color=BENCHMARK_COLORS["SPY"], width=1.5),
+        ))
+
+    # EW
+    if ew_filt is not None and len(ew_filt) > 0:
+        ew_cum = (1 + ew_filt.fillna(0)).cumprod()
+        fig.add_trace(go.Scatter(
+            x=ew_cum.index, y=ew_cum.values,
+            name="균등가중 (EW)",
+            line=dict(color=BENCHMARK_COLORS["EW"], width=1.5, dash="dash"),
+        ))
+
+    # IVW
+    if ivw_filt is not None and len(ivw_filt) > 0:
+        ivw_cum = (1 + ivw_filt.fillna(0)).cumprod()
+        fig.add_trace(go.Scatter(
+            x=ivw_cum.index, y=ivw_cum.values,
+            name="역변동성 (IVW)",
+            line=dict(color=BENCHMARK_COLORS["IVW"], width=1.5, dash="dot"),
+        ))
+
+    # Regime 배경 + Event annotation (FULL 일 때만 의미 있음)
+    if period == "FULL":
+        add_regime_backgrounds(fig, with_labels=True)
+        add_event_annotations(fig)
+
+    fig.update_layout(
+        height=450,
+        margin=dict(l=20, r=20, t=40, b=20),
+        paper_bgcolor=COLORS["background"],
+        plot_bgcolor=COLORS["secondary_bg"],
+        font=dict(color=COLORS["text"]),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        xaxis=dict(rangeslider=dict(visible=True, thickness=0.05)),
+        hovermode="x unified",
+        yaxis=dict(
+            title="누적 수익률 (시작 = 1.0)",
+            type="log" if show_log else "linear",
+        ),
+    )
+
+    st.plotly_chart(fig, use_container_width=True, key="performance_cumulative_only")
+
+
+# ======================================================================
+# 영역 5: Annual Returns 막대
 # ======================================================================
 
 def _annual_returns(monthly_ret: pd.Series) -> pd.Series:
@@ -302,7 +410,7 @@ def render_annual_returns(
 
 
 # ======================================================================
-# 영역 5: Active Return 분석 (위아래 두 차트)
+# 영역 6: Active Return 분석 (위아래 두 차트)
 # ======================================================================
 
 def render_active_return_analysis(
@@ -311,16 +419,22 @@ def render_active_return_analysis(
     ew_ret: pd.Series | None,
     ivw_ret: pd.Series | None,
     period: str,
-    rolling_window: int,
 ) -> None:
     """
-    영역 5: 위 = 연별 Active Return 막대, 아래 = Rolling Active Return + Tracking Error 이중 축.
+    영역 6: 위 = 연별 Active Return 막대, 아래 = Rolling Active Return + Tracking Error 이중 축.
+
+    Rolling 윈도우 선택은 함수 내부 (Rolling 차트 직전) 에서 처리 — UX 인접성 향상 (2026-05-11).
     """
     eval_label = _period_to_eval_label(period)
     benchmarks = _get_active_benchmarks(spy_ret, ew_ret, ivw_ret)
 
     # ── 위: 연별 Active Return 막대 ─────────────────────────────
-    st.markdown("##### 연별 Active Return (Fund - Benchmark)")
+    st.markdown("##### 연별 Active Return (Fund − Benchmark)")
+    st.caption(
+        "연도별로 펀드가 벤치마크 대비 얼마나 더 (덜) 벌었는지 막대로 표시. "
+        "**녹색** = 시장 초과 (양수), **적색** = 시장 열위 (음수). "
+        "0% 기준선 위/아래로 한눈에 우월/열위 시기를 확인할 수 있습니다."
+    )
     fig_top = go.Figure()
     f_filt = filter_by_eval_period(fund_ret, eval_label)
     fund_annual = _annual_returns(f_filt)
@@ -354,7 +468,25 @@ def render_active_return_analysis(
     st.plotly_chart(fig_top, use_container_width=True, key="perf_active_top")
 
     # ── 아래: Rolling Active + Tracking Error 이중 축 ─────────────
-    st.markdown(f"##### Rolling Active Return + Tracking Error ({rolling_window}m window)")
+    # Rolling 윈도우 선택 (Rolling 차트 직전 — UX 인접성)
+    col_rw, _ = st.columns([1, 5])
+    with col_rw:
+        rolling_window = st.selectbox(
+            "Rolling 윈도우",
+            options=[12, 36, 60],
+            index=1,
+            key="perf_rolling_window",
+            format_func=lambda x: f"{x}개월",
+        )
+
+    st.markdown(f"##### Rolling Active Return + Tracking Error ({rolling_window}개월 윈도우)")
+    st.caption(
+        f"최근 {rolling_window}개월 기준 시점별 연환산 값. "
+        f"**실선 (좌측 Y축)** = Rolling Active Return = 평균적으로 시장을 얼마나 이겼는지. "
+        f"**점선 (우측 Y축)** = Rolling Tracking Error = 시장과의 수익률 차이가 얼마나 변동했는지. "
+        f"두 라인 비교: Active 가 양수 + Tracking Error 가 작으면 ✓ 안정적 시장 초과 / "
+        f"Active 가 양수 + Tracking Error 가 크면 ⚠️ 불안정한 초과 수익."
+    )
     fig_bot = make_subplots(specs=[[{"secondary_y": True}]])
 
     for name, bench in benchmarks.items():
@@ -407,7 +539,7 @@ def render_active_return_analysis(
 
 
 # ======================================================================
-# 영역 6: Annualized Rolling Return (1y / 3y / 5y)
+# 영역 7: Annualized Rolling Return (1y / 3y / 5y)
 # ======================================================================
 
 def _rolling_annualized_return(monthly_ret: pd.Series, window_years: int) -> pd.Series:
@@ -484,7 +616,7 @@ def render_rolling_return(
 
 
 # ======================================================================
-# 영역 7: Regime 메트릭 Heatmap
+# 영역 8: Regime 메트릭 Heatmap
 # ======================================================================
 
 def _calc_regime_metric(
@@ -610,7 +742,7 @@ def _format_cell(v: float, metric: str) -> str:
 
 
 # ======================================================================
-# 영역 8: 분포 통계 카드 (Skewness / Excess Kurtosis / Tail Ratio)
+# 영역 9: 분포 통계 카드 (Skewness / Excess Kurtosis / Tail Ratio)
 # ======================================================================
 
 def _render_distribution_card(
@@ -631,21 +763,31 @@ def _render_distribution_card(
 
     # KDE mini chart (간단 히스토그램)
     fig = go.Figure()
+    # x축 동적 range — 0.5%/99.5% 분위수 기반 (극단 outlier 제외, 분포 중앙 강조)
+    x_range = None
     if len(series.dropna()) > 0:
+        s_pct = series.dropna() * 100
         fig.add_trace(go.Histogram(
-            x=series.dropna() * 100,
+            x=s_pct,
             nbinsx=30,
             marker_color=border_color,
             opacity=0.7,
             showlegend=False,
         ))
+        q_low = s_pct.quantile(0.005)
+        q_high = s_pct.quantile(0.995)
+        x_max = max(abs(q_low), abs(q_high)) * 1.15
+        x_range = [-x_max, x_max]
     fig.update_layout(
         height=120,
         margin=dict(l=10, r=10, t=5, b=5),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor=COLORS["secondary_bg"],
         font=dict(color=COLORS["text"], size=10),
-        xaxis=dict(showgrid=False, zeroline=True, zerolinecolor=COLORS["text_muted"]),
+        xaxis=dict(
+            showgrid=False, zeroline=True, zerolinecolor=COLORS["text_muted"],
+            range=x_range,
+        ),
         yaxis=dict(showgrid=False, visible=False),
     )
 
@@ -682,81 +824,48 @@ def _format_dist_value(v: float, metric: str) -> str:
 
 
 def render_distribution_stats(
-    fund_ret_monthly: pd.Series,
-    spy_ret_monthly: pd.Series,
-    ew_ret_monthly: pd.Series | None,
-    ivw_ret_monthly: pd.Series | None,
+    fund_ret_monthly: pd.Series,  # noqa: ARG001 (시그니처 호환성)
+    spy_ret_monthly: pd.Series,   # noqa: ARG001
+    ew_ret_monthly: pd.Series | None,   # noqa: ARG001
+    ivw_ret_monthly: pd.Series | None,  # noqa: ARG001
     fund_ret_daily: pd.Series | None,
     spy_ret_daily: pd.Series | None,
     period: str,
 ) -> None:
     """
-    영역 8: Skewness / Excess Kurtosis / Tail Ratio.
-    일별 / 월별 Tab + vs SPY Tab.
+    영역 8: Skewness / Excess Kurtosis / Tail Ratio — **일별 only** (2026-05-11 변경).
 
-    fund_ret_daily, spy_ret_daily: 일별 데이터 (없으면 일별 Tab 비활성).
+    이유: 월별 (192 sample) 은 중심극한정리 (CLT) 효과로 분포가 거의 정규에 수렴.
+          분포 형태 (fat tail / 비대칭) 의 진짜 의미는 일별 (~4,000 sample) 에서 관찰 가능.
+
+    fund_ret_daily, spy_ret_daily: 일별 데이터 (없으면 안내).
+    monthly 매개변수는 시그니처 호환성 유지 (호출부 변경 회피).
     """
     eval_label = _period_to_eval_label(period)
-    tab_monthly, tab_daily = st.tabs(["월별 (Monthly)", "일별 (Daily)"])
 
-    # 월별
-    with tab_monthly:
-        f = filter_by_eval_period(fund_ret_monthly, eval_label)
-        bench_dict_skew = {}
-        bench_dict_kurt = {}
-        bench_dict_tail = {}
-        active_benchmarks = _get_active_benchmarks(spy_ret_monthly, ew_ret_monthly, ivw_ret_monthly)
-        for name, bench in active_benchmarks.items():
-            b = filter_by_eval_period(bench, eval_label)
-            bench_dict_skew[name] = mc.calc_skewness(b)
-            bench_dict_kurt[name] = mc.calc_excess_kurtosis(b)
-            bench_dict_tail[name] = mc.calc_tail_ratio(b)
+    if fund_ret_daily is None or len(fund_ret_daily.dropna()) == 0:
+        st.info("일별 데이터 미산출.")
+        return
 
-        cols = st.columns(3)
-        with cols[0]:
-            _render_distribution_card("Skewness", "왜도", mc.calc_skewness(f), bench_dict_skew, f, key_suffix="monthly")
-        with cols[1]:
-            _render_distribution_card("Excess Kurtosis", "초과첨도", mc.calc_excess_kurtosis(f), bench_dict_kurt, f, key_suffix="monthly")
-        with cols[2]:
-            _render_distribution_card("Tail Ratio", "꼬리 비율", mc.calc_tail_ratio(f), bench_dict_tail, f, key_suffix="monthly")
+    s, e = EVAL_PERIODS[eval_label]
+    f_daily = fund_ret_daily[(fund_ret_daily.index >= s) & (fund_ret_daily.index <= e)]
 
-        st.caption(f"※ 월별 통계 = {len(f)} 개월")
+    bench_dict_d_skew = {}
+    bench_dict_d_kurt = {}
+    bench_dict_d_tail = {}
 
-    # 일별
-    with tab_daily:
-        if fund_ret_daily is None or len(fund_ret_daily.dropna()) == 0:
-            st.info("일별 데이터 미산출.")
-            return
+    if spy_ret_daily is not None and st.session_state.get("show_spy", True):
+        spy_d_filt = spy_ret_daily[(spy_ret_daily.index >= s) & (spy_ret_daily.index <= e)]
+        bench_dict_d_skew["SPY"] = mc.calc_skewness(spy_d_filt)
+        bench_dict_d_kurt["SPY"] = mc.calc_excess_kurtosis(spy_d_filt)
+        bench_dict_d_tail["SPY"] = mc.calc_tail_ratio(spy_d_filt)
 
-        # 기간 필터 — winsorize 적용 없이 원본 그대로 (final 정합).
-        # 분석 기간 (2010-2025) 내 SPY/fund_daily 모두 정상 범위 (-11.59% ~ +11.46%).
-        # 진단 결과 SPY -41% 는 분석 기간 외 (2004-01-02 first-row 오류),
-        # ^IRX 등 비정상 ticker 는 fund.weights 에 자동 제외됨.
-        # final/bl_functions.py:compute_daily_slice 도 NaN threshold + fillna(0) 만,
-        # winsorize 처리 없음 → 우리도 동일 정합 (학술 정직성).
-        s, e = EVAL_PERIODS[eval_label]
-        f_daily = fund_ret_daily[(fund_ret_daily.index >= s) & (fund_ret_daily.index <= e)]
+    cols = st.columns(3)
+    with cols[0]:
+        _render_distribution_card("Skewness", "왜도", mc.calc_skewness(f_daily), bench_dict_d_skew, f_daily, key_suffix="daily")
+    with cols[1]:
+        _render_distribution_card("Excess Kurtosis", "초과첨도", mc.calc_excess_kurtosis(f_daily), bench_dict_d_kurt, f_daily, key_suffix="daily")
+    with cols[2]:
+        _render_distribution_card("Tail Ratio", "꼬리 비율", mc.calc_tail_ratio(f_daily), bench_dict_d_tail, f_daily, key_suffix="daily")
 
-        bench_dict_d_skew = {}
-        bench_dict_d_kurt = {}
-        bench_dict_d_tail = {}
-
-        if spy_ret_daily is not None and st.session_state.get("show_spy", True):
-            spy_d_filt = spy_ret_daily[(spy_ret_daily.index >= s) & (spy_ret_daily.index <= e)]
-            bench_dict_d_skew["SPY"] = mc.calc_skewness(spy_d_filt)
-            bench_dict_d_kurt["SPY"] = mc.calc_excess_kurtosis(spy_d_filt)
-            bench_dict_d_tail["SPY"] = mc.calc_tail_ratio(spy_d_filt)
-
-        cols = st.columns(3)
-        with cols[0]:
-            _render_distribution_card("Skewness", "왜도 (일별)", mc.calc_skewness(f_daily), bench_dict_d_skew, f_daily, key_suffix="daily")
-        with cols[1]:
-            _render_distribution_card("Excess Kurtosis", "초과첨도 (일별)", mc.calc_excess_kurtosis(f_daily), bench_dict_d_kurt, f_daily, key_suffix="daily")
-        with cols[2]:
-            _render_distribution_card("Tail Ratio", "꼬리 비율 (일별)", mc.calc_tail_ratio(f_daily), bench_dict_d_tail, f_daily, key_suffix="daily")
-
-        st.caption(
-            f"※ 일별 통계 = {len(f_daily)} 영업일 — fund.weights × daily_returns 산출 "
-            f"(final/bl_functions.compute_daily_slice 패턴: NaN < 10% threshold + fillna(0)). "
-            f"Excess Kurtosis 12-19 는 정상 시장 일별 통계 (fat tail) — Bollerslev (1986) GARCH 동기."
-        )
+    st.caption(f"※ 일별 통계 = {len(f_daily)} 영업일 기준.")

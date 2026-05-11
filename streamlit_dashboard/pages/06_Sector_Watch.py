@@ -55,7 +55,7 @@ render_sidebar()
 
 
 # === 데이터 로드 ======================================================
-fund = load_fund_results()  # default = mat_eq_mcap_raw_he (최종 Top 1)
+fund = load_fund_results()  # default = mat_eq_eq_raw_pap (최종 Top 1)
 weights = fund["weights"]
 fund_ret = fund["ret"]
 fund_spy = fund["spy_ret"]
@@ -74,10 +74,9 @@ render_subheader(
     title_en="Sector Watch",
     title_ko="섹터 분석",
     description=(
-        "섹터 비중 / 분산 / SPY 비교 분석. "
-        "**HO 24m (2024-2025) sector rotation 영향과 펀드의 sector 분산 운용의 양면성** 분석 포함. "
-        "사이드바에서 기간 (FULL / TEST / HO) 토글 가능. "
-        "SPY sector weight = panel.log_mcap × sp500_membership[t-1] (mcap 가중, 학술 정확)."
+        "펀드의 섹터 구성과 시장 (S&P 500) 대비 차이를 분석합니다. "
+        "**2024-2025년 섹터 변화가 펀드 성과에 미친 영향** 도 함께 확인 가능. "
+        "사이드바에서 기간 선택 가능."
     ),
 )
 
@@ -88,9 +87,8 @@ period = st.session_state.get("period", "FULL")
 # === 영역 3: Sector Summary KPI 5개 ===================================
 st.subheader(f"섹터 KPI — {period}")
 st.caption(
-    "Sector HHI / Avg |Tilt| / Active Bets / Most Overweight / **Most Underweight** (★ HO narrative 핵심). "
-    "Latest snapshot = 최신 월 (2025-12), 기간 평균 = 사이드바 토글 월별 평균. "
-    "HHI 만 vs SPY 비교 (학술적으로 의미 있는 비교)."
+    "**섹터 집중도 / 섹터 비중 평균 차이 / 섹터 비중 최대 차이 / 최대 over-weight 섹터 / 최대 under-weight 섹터**. "
+    "시장 (SPY) 대비 어떤 섹터에 더/덜 투자했는지 비교합니다."
 )
 render_sector_kpi(weights, panel, sp500_membership, ticker_to_sector, period)
 st.divider()
@@ -99,9 +97,8 @@ st.divider()
 # === 영역 4: Sector Treemap ============================================
 st.subheader("Sector Treemap — Fund vs SPY")
 st.caption(
-    "좌측 Fund / 우측 SPY (S&P500 mcap 가중) 동일 시점 비교. "
-    "시점 슬라이더로 월별 시점 선택 가능 (192 시점). "
-    "섹터 색상 = GICS 11 표준 (`SECTOR_COLORS`)."
+    "좌측은 펀드, 우측은 시장 (S&P 500 시가총액 가중) 의 섹터 구성을 같은 시점에서 비교. "
+    "시점 슬라이더로 원하는 월 선택 가능."
 )
 render_sector_treemap(weights, panel, sp500_membership, ticker_to_sector)
 st.divider()
@@ -110,20 +107,20 @@ st.divider()
 # === 영역 5: Sector Decomposition 표 ===================================
 st.subheader("Sector Decomposition — Latest snapshot")
 st.caption(
-    "9 컬럼: Sector / Weight / Tilt vs SPY / 12m Return / # Holdings / Volatility / Beta / Sharpe / Contribution. "
-    "sector level 메트릭 = ticker level 가중 평균 (sector 내 weight 정규화). "
-    "컬럼 헤더 클릭 → 정렬, CSV 다운로드 가능."
+    "**섹터 / 비중 / 시장 대비 차이 / 12개월 수익률 / 보유 종목 수 / 변동성 / β / Sharpe / 기여도**. "
+    "섹터 단위 값 = 섹터 내 종목들의 가중 평균. "
+    "컬럼 클릭 정렬 + CSV 다운로드 가능."
 )
 render_sector_decomposition_table(weights, panel, sp500_membership, ticker_to_sector)
 st.divider()
 
 
 # === 영역 6: Sector Tilt vs SPY (Tornado) =============================
-st.subheader("Sector Tilt vs SPY — Active Bets")
+st.subheader("Sector Tilt vs SPY — 섹터 비중 차이")
 st.caption(
-    "Tornado Chart (Most Over → Most Under). "
-    "0% 기준선 + ±1% 임계선 (Active Bets) + ±5% 임계선 (큰 베팅). "
-    "★ Information Technology = HO 정당화 narrative 핵심 (펀드 under-weight)."
+    "시장 대비 펀드의 섹터 비중 차이 (over-weight ↔ under-weight). "
+    "0% 기준선 + ±1% 임계 (의미 있는 차이) + ±5% 임계 (큰 차이). "
+    "**IT 섹터의 under-weight 가 2024-2025년 부진의 핵심 원인**."
 )
 render_sector_tilt_tornado(weights, panel, sp500_membership, ticker_to_sector)
 st.divider()
@@ -132,28 +129,30 @@ st.divider()
 # === 영역 7: Sector 시계열 변화 (Sector Rotation) =====================
 st.subheader("Sector Rotation — 시계열 변화")
 st.caption(
-    "차트 토글 (Stacked Area / Multi-line) + 데이터 토글 (Fund / SPY / Tilt) + 시간 단위 (월별 / 분기별). "
-    "Regime 배경색 (R1/R2/R3/HO) + COVID/2022 Bear/2024 AI Rally 이벤트 annotation 포함."
+    "섹터 비중 변화 시계열 — "
+    "차트 유형 (누적 면적 / 다중 라인) + 데이터 (펀드 / 시장 / 차이) + 시간 단위 (월별 / 분기별) 선택. "
+    "시장 국면 배경 + 주요 이벤트 표시."
 )
 render_sector_rotation(weights, panel, sp500_membership, ticker_to_sector)
 st.divider()
 
 
-# === 영역 8: ★★★ HO 24m 정당화 narrative ===============================
-st.subheader("HO 24m 분석 + 정당화 narrative")
+# === 영역 8: Hold Out 24m 분석 ========================================
+st.subheader("Hold Out 24m 분석")
 st.caption(
-    "**핵심 영역** — 펀드의 HO 24m underperform 의 학술적 정당화. "
-    "1) SPY IT 비중 vs Fund IT Tilt 이중 축 — IT 시장 집중 + 펀드 under-weight 추세. "
-    "2) HO Sector Carino Contribution — IT under-weight 의 직접적 영향. "
-    "3) Regime 별 Sector HHI — 펀드는 일관된 분산, SPY 는 HO 에 집중 ↑. "
-    "4) 학술 결론 (Markowitz 1952 + Fama-French 1992)."
+    "**Hold Out 24m (2024-2025) 부진 원인 분석**: "
+    "1) 시장 IT 집중도가 급격히 상승, 반면 펀드는 IT under-weight 유지 → 시장 대비 부진. "
+    "2) **IT 섹터 평균 변동성이 시장 평균보다 일관되게 높음** → LSTM 변동성 인지 운용의 IT under-weight 근거. "
+    "3) Hold Out 기간 섹터별 기여도 분석. "
+    "4) 시장 국면별 집중도 비교 — 펀드는 일관된 분산, 시장은 Hold Out 기간 IT 집중. "
+    "5) 학술적 결론 — 분산 투자의 단기 trade-off."
 )
 render_ho_justification(weights, panel, sp500_membership, ticker_to_sector, fund_ret, fund_spy)
 
 
 # === 영역 9: Footer ===================================================
 st.caption(
-    "※ SPY sector weight 산출: panel.log_mcap × sp500_membership[t-1] (mcap 가중, look-ahead 회피). "
-    "GICS sector 매핑: panel.gics_sector 우선 + universe.csv fallback (load 시점 자동 정합화 적용)."
+    "※ 시장 (SPY) 섹터 비중은 S&P 500 종목들의 시가총액 가중으로 산출됩니다. "
+    "섹터 분류는 GICS 표준 11분류를 따릅니다."
 )
 render_footer()

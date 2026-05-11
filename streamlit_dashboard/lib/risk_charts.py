@@ -103,95 +103,101 @@ def render_risk_kpi(
 
     from lib.tooltips import get_tooltip
 
-    def _label(text: str, tip_key: str) -> str:
-        """카드 라벨 + tooltip ⓘ HTML."""
-        tip = get_tooltip(tip_key) or ""
-        if not tip:
-            return f"**{text}**"
-        return (
-            f'<div style="font-weight:700;">{text}'
-            f'<span title="{tip}" style="cursor:help;color:#9CA3AF;font-size:11px;'
-            f'margin-left:6px;border:1px solid #374151;border-radius:50%;'
-            f'width:14px;height:14px;display:inline-flex;align-items:center;'
-            f'justify-content:center;">ⓘ</span></div>'
-        )
+    # SPY = primary delta 기준, 추가 벤치마크는 caption 으로
+    has_spy = "SPY" in benchmarks
+    spy_bench = benchmarks.get("SPY")
 
     cols = st.columns(5)
 
-    # Vol
+    # Vol — 낮을수록 좋음 (delta_color="inverse")
     with cols[0]:
-        st.markdown(_label("Volatility", "Volatility"), unsafe_allow_html=True)
-        st.markdown(f"## {_format_pct(fund_vol)}")
+        spy_vol_delta = None
+        if has_spy:
+            b_vol_spy = mc.calc_volatility(filter_by_eval_period(spy_bench, eval_label))
+            spy_vol_delta = fund_vol - b_vol_spy
+        st.metric(
+            label="Volatility",
+            value=_format_pct(fund_vol),
+            delta=(
+                f"{_format_pct(spy_vol_delta, plus_sign=True)} vs SPY"
+                if spy_vol_delta is not None else None
+            ),
+            delta_color="inverse",
+            help=get_tooltip("Volatility") or "수익률의 변동성 (annualized)",
+        )
         for name, bench in benchmarks.items():
+            if name == "SPY":
+                continue
             b_vol = mc.calc_volatility(filter_by_eval_period(bench, eval_label))
-            delta = fund_vol - b_vol
-            color = _delta_color_lower_is_better(delta)  # 낮을수록 좋음
-            st.markdown(
-                f'<div style="font-size:12px;color:{color};">'
-                f'vs {name} {_format_pct(delta, plus_sign=True)}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+            d = fund_vol - b_vol
+            st.caption(f"vs {name} {_format_pct(d, plus_sign=True)}")
 
-    # MDD
+    # MDD — |MDD| 비교, 낮을수록 좋음
     with cols[1]:
-        st.markdown(_label("MDD", "MDD"), unsafe_allow_html=True)
-        st.markdown(f"## {_format_pct(fund_mdd)}")
+        spy_mdd_delta = None
+        if has_spy:
+            b_mdd_spy = mc.calc_mdd(filter_by_eval_period(spy_bench, eval_label))
+            spy_mdd_delta = abs(fund_mdd) - abs(b_mdd_spy)
+        st.metric(
+            label="MDD",
+            value=_format_pct(fund_mdd),
+            delta=(
+                f"|Δ|{_format_pct(spy_mdd_delta, plus_sign=True)} vs SPY"
+                if spy_mdd_delta is not None else None
+            ),
+            delta_color="inverse",
+            help=get_tooltip("MDD") or "최대 낙폭 (Maximum Drawdown)",
+        )
         for name, bench in benchmarks.items():
+            if name == "SPY":
+                continue
             b_mdd = mc.calc_mdd(filter_by_eval_period(bench, eval_label))
-            delta = abs(fund_mdd) - abs(b_mdd)  # |MDD| 비교
-            color = _delta_color_lower_is_better(delta)
-            st.markdown(
-                f'<div style="font-size:12px;color:{color};">'
-                f'vs {name} |Δ|{_format_pct(delta, plus_sign=True)}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+            d = abs(fund_mdd) - abs(b_mdd)
+            st.caption(f"vs {name} |Δ|{_format_pct(d, plus_sign=True)}")
 
-    # Beta
+    # Beta — 단순 값 (vs SPY) + caption 해설
     with cols[2]:
-        st.markdown(_label("Beta", "Beta"), unsafe_allow_html=True)
-        st.markdown(f"## {_format_ratio(fund_beta)}")
-        st.caption("vs SPY")
+        st.metric(
+            label="Beta",
+            value=_format_ratio(fund_beta),
+            delta="vs SPY",
+            delta_color="off",
+            help=get_tooltip("Beta") or "시장 민감도 (β=1 이면 시장과 동일)",
+        )
         if not pd.isna(fund_beta):
             if fund_beta < 1:
-                st.markdown(
-                    f'<div style="font-size:12px;color:{COLORS["accent_green"]};">시장 변동에 덜 민감 (β&lt;1)</div>',
-                    unsafe_allow_html=True,
-                )
+                st.caption("시장 변동에 덜 민감 (β<1)")
             else:
-                st.markdown(
-                    f'<div style="font-size:12px;color:{COLORS["text_muted"]};">시장과 비슷/더 민감 (β≥1)</div>',
-                    unsafe_allow_html=True,
-                )
+                st.caption("시장과 비슷/더 민감 (β≥1)")
 
-    # R²
+    # R² — 단순 값 + caption 해설
     with cols[3]:
-        st.markdown(_label("R²", "R²"), unsafe_allow_html=True)
-        st.markdown(f"## {_format_pct(fund_r2)}")
-        st.caption("vs SPY")
-        st.markdown(
-            f'<div style="font-size:11px;color:{COLORS["text_muted"]};">'
-            f'시장이 펀드 변동의 {fund_r2*100:.0f}%를 설명' if not pd.isna(fund_r2) else '—'
-            f'</div>',
-            unsafe_allow_html=True,
+        st.metric(
+            label="R²",
+            value=_format_pct(fund_r2),
+            delta="vs SPY",
+            delta_color="off",
+            help=get_tooltip("R²") or "시장 설명력 (1.0 = 시장으로 완전 설명)",
         )
+        if not pd.isna(fund_r2):
+            st.caption(f"시장이 펀드 변동의 {fund_r2*100:.0f}%를 설명")
+        else:
+            st.caption("—")
 
-    # TE
+    # TE — 단순 값 (vs SPY) + 추가 벤치마크 caption
     with cols[4]:
-        st.markdown(_label("Tracking Error", "Tracking Error"), unsafe_allow_html=True)
-        st.markdown(f"## {_format_pct(fund_te)}")
-        st.caption("vs SPY (annualized)")
+        st.metric(
+            label="Tracking Error",
+            value=_format_pct(fund_te),
+            delta="vs SPY (annualized)",
+            delta_color="off",
+            help=get_tooltip("Tracking Error") or "벤치마크 대비 추적 오차",
+        )
         for name, bench in benchmarks.items():
             if name == "SPY":
                 continue
             te_b = mc.calc_tracking_error(f, filter_by_eval_period(bench, eval_label))
-            st.markdown(
-                f'<div style="font-size:12px;color:{COLORS["text_muted"]};">'
-                f'vs {name} {_format_pct(te_b)}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+            st.caption(f"vs {name} {_format_pct(te_b)}")
 
 
 # ======================================================================
@@ -302,35 +308,36 @@ def render_drawdown_recovery(
 # ======================================================================
 
 def render_var_cvar_distribution(
-    fund_ret_monthly: pd.Series,
-    spy_ret_monthly: pd.Series,
+    fund_ret_monthly: pd.Series,    # noqa: ARG001 (시그니처 호환성)
+    spy_ret_monthly: pd.Series,     # noqa: ARG001
     fund_ret_daily: pd.Series | None,
     spy_ret_daily: pd.Series | None,
     period: str,
 ) -> None:
     """
-    영역 5: VaR / CVaR 분포 (히스토그램 + KDE + 임계선 + 정규분포 비교).
-    Tab: 월별 (Monthly) / 일별 (Daily).
+    영역 7: VaR / CVaR 분포 (히스토그램 + KDE + 임계선 + 정규분포 비교) — **일별 only** (2026-05-11 변경).
+
+    이유:
+      - 월별 (192 sample) 의 5% 분위수는 단 ~9.6개 → 통계적 신뢰성 매우 낮음
+      - 학술/실무 VaR 표준 = 일별 (Basel III, J.P. Morgan RiskMetrics)
+      - 분포 통계 (영역 9 Performance) 와 일관성 — 꼬리/극단 메트릭은 모두 일별
+      - 사이드바 기간 토글 (TEST / Hold Out / FULL) 은 일별에서도 동일 작동
+
+    monthly 매개변수는 시그니처 호환성 유지 (호출부 변경 회피).
     """
     eval_label = _period_to_eval_label(period)
-    tab_m, tab_d = st.tabs(["월별 (Monthly)", "일별 (Daily)"])
 
-    with tab_m:
-        f = filter_by_eval_period(fund_ret_monthly, eval_label)
-        s = filter_by_eval_period(spy_ret_monthly, eval_label)
-        _render_distribution_chart(f, s, label_unit="month", key_suffix="monthly")
+    if fund_ret_daily is None or len(fund_ret_daily.dropna()) == 0:
+        st.info("일별 데이터 미산출")
+        return
 
-    with tab_d:
-        if fund_ret_daily is None:
-            st.info("일별 데이터 미산출")
-            return
-        s_dt, e_dt = EVAL_PERIODS[eval_label]
-        f_d = fund_ret_daily[(fund_ret_daily.index >= s_dt) & (fund_ret_daily.index <= e_dt)]
-        s_d = (
-            spy_ret_daily[(spy_ret_daily.index >= s_dt) & (spy_ret_daily.index <= e_dt)]
-            if spy_ret_daily is not None else None
-        )
-        _render_distribution_chart(f_d, s_d, label_unit="day", key_suffix="daily")
+    s_dt, e_dt = EVAL_PERIODS[eval_label]
+    f_d = fund_ret_daily[(fund_ret_daily.index >= s_dt) & (fund_ret_daily.index <= e_dt)]
+    s_d = (
+        spy_ret_daily[(spy_ret_daily.index >= s_dt) & (spy_ret_daily.index <= e_dt)]
+        if spy_ret_daily is not None else None
+    )
+    _render_distribution_chart(f_d, s_d, label_unit="day", key_suffix="daily")
 
 
 def _render_distribution_chart(
@@ -396,6 +403,16 @@ def _render_distribution_chart(
         annotation_position="bottom",
     )
 
+    # x축 동적 range — 0.5%/99.5% 분위수 기반 (99% 데이터 포함, 극단 outlier 제외)
+    # 극단값까지 표시하면 중앙 분포가 압축되어 보이는 문제 해결.
+    all_data = [f_clean]
+    if spy_ret is not None and len(spy_ret.dropna()) > 0:
+        all_data.append(spy_ret.dropna() * 100)
+    combined = pd.concat(all_data)
+    q_low = combined.quantile(0.005)
+    q_high = combined.quantile(0.995)
+    x_max = max(abs(q_low), abs(q_high)) * 1.15
+
     fig.update_layout(
         height=380,
         barmode="overlay",
@@ -403,7 +420,7 @@ def _render_distribution_chart(
         paper_bgcolor=COLORS["background"],
         plot_bgcolor=COLORS["secondary_bg"],
         font=dict(color=COLORS["text"]),
-        xaxis_title=f"Return (%, {label_unit})",
+        xaxis=dict(title=f"Return (%, {label_unit})", range=[-x_max, x_max]),
         yaxis_title="Density",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
@@ -437,27 +454,30 @@ def _render_distribution_chart(
 def render_rolling_risk_metrics(
     fund_ret: pd.Series,
     spy_ret: pd.Series,
+    ew_ret: pd.Series | None,
+    ivw_ret: pd.Series | None,
     rf: pd.Series,
     period: str,
     window: int,
 ) -> None:
     """
-    영역 6: 5 메트릭 통합 rolling 시계열 (Q-G 보강).
+    영역 8: 5 메트릭 통합 rolling 시계열.
     Volatility / Sortino / Beta / R² / Tracking Error.
+
+    벤치마크 비교선 (2026-05-11 보강):
+      - Vol / Sortino: 절대 메트릭 → SPY/EW/IVW 자체 rolling 값을 비교선으로
+      - Beta / R² / TE: SPY 기준 메트릭 → EW/IVW 의 SPY 대비 rolling 값을 비교선으로
+        (펀드의 SPY 추적 특성을 EW/IVW 와 직접 비교)
     """
     eval_label = _period_to_eval_label(period)
+    active_benchmarks = _get_active_benchmarks(spy_ret, ew_ret, ivw_ret)
 
-    rv = mc.calc_rolling_volatility(fund_ret, window)
-    rsor = mc.calc_rolling_sortino(fund_ret, rf, window)
-    rb = mc.calc_rolling_beta(fund_ret, spy_ret, rf, window)
-    rr2 = mc.calc_rolling_r_squared(fund_ret, spy_ret, window)
-    rte = mc.calc_rolling_tracking_error(fund_ret, spy_ret, window)
-
-    rv = filter_by_eval_period(rv, eval_label)
-    rsor = filter_by_eval_period(rsor, eval_label)
-    rb = filter_by_eval_period(rb, eval_label)
-    rr2 = filter_by_eval_period(rr2, eval_label)
-    rte = filter_by_eval_period(rte, eval_label)
+    # Fund 메트릭 (5개)
+    rv = filter_by_eval_period(mc.calc_rolling_volatility(fund_ret, window), eval_label)
+    rsor = filter_by_eval_period(mc.calc_rolling_sortino(fund_ret, rf, window), eval_label)
+    rb = filter_by_eval_period(mc.calc_rolling_beta(fund_ret, spy_ret, rf, window), eval_label)
+    rr2 = filter_by_eval_period(mc.calc_rolling_r_squared(fund_ret, spy_ret, window), eval_label)
+    rte = filter_by_eval_period(mc.calc_rolling_tracking_error(fund_ret, spy_ret, window), eval_label)
 
     fig = make_subplots(
         rows=5, cols=1,
@@ -466,36 +486,99 @@ def render_rolling_risk_metrics(
         subplot_titles=(
             "Volatility (annualized)",
             "Sortino (sub<0 std)",
-            f"Beta vs SPY",
+            "Beta vs SPY",
             "R² vs SPY",
             "Tracking Error (annualized)",
         ),
     )
 
-    fig.add_trace(go.Scatter(x=rv.index, y=rv.values * 100, name="Vol",
-                             line=dict(color=BENCHMARK_COLORS["Fund"], width=1.5)),
+    # ── Fund 메인 라인 (5 메트릭) — 메트릭별 다른 색상 (시각 구분) ───
+    fund_metric_colors = {
+        "vol": BENCHMARK_COLORS["Fund"],   # Cobalt Blue
+        "sortino": COLORS["accent_green"], # 초록
+        "beta": COLORS["accent_amber"],    # 주황
+        "r2": BENCHMARK_COLORS["IVW"],     # 보라/IVW 색
+        "te": COLORS["accent_red"],        # 빨강
+    }
+    fig.add_trace(go.Scatter(x=rv.index, y=rv.values * 100, name="Fund Vol",
+                             line=dict(color=fund_metric_colors["vol"], width=2),
+                             legendgroup="vol", legendgrouptitle_text="Volatility"),
                   row=1, col=1)
-    fig.add_trace(go.Scatter(x=rsor.index, y=rsor.values, name="Sortino",
-                             line=dict(color=COLORS["accent_green"], width=1.5)),
+    fig.add_trace(go.Scatter(x=rsor.index, y=rsor.values, name="Fund Sortino",
+                             line=dict(color=fund_metric_colors["sortino"], width=2),
+                             legendgroup="sortino", legendgrouptitle_text="Sortino"),
                   row=2, col=1)
-    fig.add_trace(go.Scatter(x=rb.index, y=rb.values, name="Beta",
-                             line=dict(color=COLORS["accent_amber"], width=1.5)),
+    fig.add_trace(go.Scatter(x=rb.index, y=rb.values, name="Fund β vs SPY",
+                             line=dict(color=fund_metric_colors["beta"], width=2),
+                             legendgroup="beta", legendgrouptitle_text="Beta vs SPY"),
                   row=3, col=1)
     fig.add_hline(y=1, line_dash="dash", line_color=COLORS["text_muted"], line_width=1, row=3, col=1)
-    fig.add_trace(go.Scatter(x=rr2.index, y=rr2.values * 100, name="R²",
-                             line=dict(color=BENCHMARK_COLORS["IVW"], width=1.5)),
+    fig.add_trace(go.Scatter(x=rr2.index, y=rr2.values * 100, name="Fund R² vs SPY",
+                             line=dict(color=fund_metric_colors["r2"], width=2),
+                             legendgroup="r2", legendgrouptitle_text="R² vs SPY"),
                   row=4, col=1)
-    fig.add_trace(go.Scatter(x=rte.index, y=rte.values * 100, name="TE",
-                             line=dict(color=COLORS["accent_red"], width=1.5)),
+    fig.add_trace(go.Scatter(x=rte.index, y=rte.values * 100, name="Fund TE vs SPY",
+                             line=dict(color=fund_metric_colors["te"], width=2),
+                             legendgroup="te", legendgrouptitle_text="TE vs SPY"),
                   row=5, col=1)
 
+    # ── 벤치마크 비교선 — 점선 + 벤치마크별 색상 (Fund 의 실선과 구분) ─
+    # Fund (메트릭별 실선) vs 벤치마크 (벤치마크별 점선) 시각 위계 분리.
+    dash_map = {"SPY": "dot", "EW": "dash", "IVW": "dashdot"}
+    for name, bench in active_benchmarks.items():
+        color = BENCHMARK_COLORS.get(name, COLORS["text_muted"])
+        dash = dash_map.get(name, "dot")
+
+        # Vol (모든 벤치마크 — 절대 메트릭)
+        bv = filter_by_eval_period(mc.calc_rolling_volatility(bench, window), eval_label)
+        fig.add_trace(go.Scatter(x=bv.index, y=bv.values * 100, name=f"{name} Vol",
+                                 line=dict(color=color, width=1.5, dash=dash),
+                                 legendgroup="vol"),
+                      row=1, col=1)
+
+        # Sortino (모든 벤치마크 — 절대 메트릭)
+        bsor = filter_by_eval_period(mc.calc_rolling_sortino(bench, rf, window), eval_label)
+        fig.add_trace(go.Scatter(x=bsor.index, y=bsor.values, name=f"{name} Sortino",
+                                 line=dict(color=color, width=1.5, dash=dash),
+                                 legendgroup="sortino"),
+                      row=2, col=1)
+
+        # Beta / R² / TE — SPY 자체는 의미 없음 (β vs SPY = 1, R² = 100%, TE = 0)
+        # 따라서 EW / IVW 만 추가 (SPY 대비)
+        if name == "SPY":
+            continue
+
+        bb = filter_by_eval_period(mc.calc_rolling_beta(bench, spy_ret, rf, window), eval_label)
+        fig.add_trace(go.Scatter(x=bb.index, y=bb.values, name=f"{name} β vs SPY",
+                                 line=dict(color=color, width=1.5, dash=dash),
+                                 legendgroup="beta"),
+                      row=3, col=1)
+
+        br2 = filter_by_eval_period(mc.calc_rolling_r_squared(bench, spy_ret, window), eval_label)
+        fig.add_trace(go.Scatter(x=br2.index, y=br2.values * 100, name=f"{name} R² vs SPY",
+                                 line=dict(color=color, width=1.5, dash=dash),
+                                 legendgroup="r2"),
+                      row=4, col=1)
+
+        bte = filter_by_eval_period(mc.calc_rolling_tracking_error(bench, spy_ret, window), eval_label)
+        fig.add_trace(go.Scatter(x=bte.index, y=bte.values * 100, name=f"{name} TE vs SPY",
+                                 line=dict(color=color, width=1.5, dash=dash),
+                                 legendgroup="te"),
+                      row=5, col=1)
+
     fig.update_layout(
-        height=900,
+        height=950,
         margin=dict(l=20, r=20, t=40, b=20),
         paper_bgcolor=COLORS["background"],
         plot_bgcolor=COLORS["secondary_bg"],
         font=dict(color=COLORS["text"], size=11),
-        showlegend=False,
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="top", y=1,
+            xanchor="left", x=1.02,
+            groupclick="toggleitem",
+        ),
         hovermode="x unified",
     )
     fig.update_yaxes(title_text="Vol (%)", row=1, col=1)

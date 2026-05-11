@@ -171,9 +171,11 @@ def _render_card(card: dict) -> None:
         else ""
     )
 
+    # min-height + flex column → 카드 간 동일 높이 보장 (subtitle/delta 유무 무관)
     card_html = (
         f'<div style="border:2px solid {border_color};border-radius:8px;'
-        f'padding:16px;margin-bottom:8px;background-color:#1F2937;">'
+        f'padding:16px;margin-bottom:8px;background-color:#1F2937;'
+        f'min-height:180px;display:flex;flex-direction:column;">'
         f'<div style="font-size:24px;">{card["icon"]}</div>'
         f'<div style="font-weight:bold;margin:8px 0;color:#FAFAFA;">{card["title"]}</div>'
         f'<div style="font-size:18px;color:{border_color};">{card["value"]}</div>'

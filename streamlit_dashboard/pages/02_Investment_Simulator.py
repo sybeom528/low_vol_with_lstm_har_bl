@@ -57,7 +57,7 @@ render_sidebar()
 
 
 # === 데이터 로드 ======================================================
-fund = load_fund_results()  # default = mat_eq_mcap_raw_he
+fund = load_fund_results()  # default = mat_eq_eq_raw_pap
 fund_ret = fund["ret"]
 fund_spy = fund["spy_ret"]
 
@@ -72,8 +72,9 @@ render_subheader(
     title_ko="내 투자 시뮬레이션",
     description=(
         "**\"내가 이때 얼마를 투자했더라면?\"** 실제 수익을 시뮬레이션해 보세요. "
-        "Lump-sum (일시 투자) / DCA (분산 투자) / Goal-based (목표 역산) 3가지 시나리오. "
-        "사이드바에서 비교 벤치마크 (SPY / EW / IVW) 토글 가능."
+        "**일시 투자** / **분산 투자** (매월 일정 금액 추가) / "
+        "**목표 역산** (목표 금액 달성에 필요한 초기 투자금) 3가지 시나리오. "
+        "사이드바에서 비교 벤치마크 선택 가능."
     ),
 )
 render_simulator_disclaimer()
@@ -123,11 +124,9 @@ st.divider()
 # === 영역 5: 누적 자산 곡선 ===========================================
 st.subheader("누적 자산 곡선")
 st.caption(
-    "Fund (Adaptive VolControl) 자산 변화 시계열. "
-    "사이드바에서 비교 벤치마크 (SPY / EW / IVW) 토글 시 동일 시작 금액 normalize 라인 추가. "
-    "DCA 시나리오 시 누적 투자금액 점선 표시. "
-    "Regime 배경 (R1/R2/R3/HO) + COVID/2022 Bear/2024 AI Rally 이벤트 annotation. "
-    "Y축 Linear/Log 토글 + 기간 슬라이더 가능."
+    "내가 투자한 금액이 시간에 따라 어떻게 변했을지 보여드립니다. "
+    "선택한 벤치마크와 동일 시작 금액으로 비교, 분산 투자 시 누적 투자금 점선 표시. "
+    "시장 국면 배경 + 주요 이벤트 표시. Y축 Linear/Log + 기간 슬라이더 사용 가능."
 )
 
 # 활성 벤치마크만 산출 — Fund 와 동일 시나리오 (DCA 시 매월 추가 동일 적용)
@@ -160,11 +159,11 @@ st.divider()
 # === 영역 6: Insight 박스 (카드 그리드) ===============================
 st.subheader("인사이트 — Insights")
 st.caption(
-    "시뮬레이션 결과 + 활성 벤치마크 + 시나리오별 조건부 카드 (4-8개). "
-    "정적 템플릿 + 동적 값 (LLM 미사용) — 빠른 응답 + 일관 메시지."
+    "시뮬레이션 결과의 핵심 포인트를 카드로 정리. "
+    "시나리오와 비교 벤치마크에 따라 카드 내용이 동적으로 변경됩니다."
 )
 cards = generate_insight_cards(result, benchmarks, scenario)
-render_insight_grid(cards, cols_per_row=3)
+render_insight_grid(cards, cols_per_row=2)
 
 
 # === 영역 7: Footer ===================================================

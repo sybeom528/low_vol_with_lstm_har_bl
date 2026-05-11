@@ -143,7 +143,7 @@ def render_holdings_kpi(
     spy = _spy_kpi_baseline(panel, ticker_to_sector)
 
     # === 헤더 라벨 ===
-    period_label_map = {"FULL": "FULL 192m", "TEST": "TEST 168m", "HO": "HO 24m"}
+    period_label_map = {"FULL": "FULL 192m", "TEST": "TEST 168m", "HO": "Hold Out 24m"}
     st.caption(
         f"**Latest snapshot**: {latest_date.strftime('%Y-%m')}  ·  "
         f"**기간 평균**: {period_label_map.get(period, period)}"
@@ -200,18 +200,23 @@ def render_holdings_kpi(
         )
         st.caption(f"평균 {_fmt_ratio(avg.get('sector_hhi_avg', np.nan), 3)}")
 
-    # --- KPI 5: Top Weights (다중 값) ---
+    # --- KPI 5: Top 10 비중 (가장 비중 큰 10 종목의 weight 합) ---
     with cols[4]:
         st.metric(
-            label="Top Weights",
+            label="Top 10 비중",
             value=_fmt_pct(snap["top10"], digits=1),
-            delta=f"{(snap['top10'] - spy['top10']) * 100:+.1f}%p vs 균등",
+            delta=f"{(snap['top10'] - spy['top10']) * 100:+.1f}%p vs 균등가중",
             delta_color="inverse",
-            help="Top 1 / 5 / 10 종목 weight 합계. 낮을수록 분산",
+            help=(
+                "**Top 10 종목 weight 합계** — 가장 비중 큰 10개 종목이 portfolio 의 X% 차지. "
+                "낮을수록 분산 운용, 높을수록 소수 종목 집중. "
+                "**vs 균등가중** = 모든 종목을 1/N (= 1/펀드 universe 종목 수, 약 1/500) 씩 보유한 경우 대비 차이. "
+                "예: 균등가중 시 Top 10 = 10/500 = 2.0%, 펀드가 23% 면 +21%p 더 집중."
+            ),
         )
         st.caption(
-            f"T1: {_fmt_pct(snap['top1'], digits=2)} · "
-            f"T5: {_fmt_pct(snap['top5'], digits=1)}"
+            f"Top 1: {_fmt_pct(snap['top1'], digits=2)} · "
+            f"Top 5: {_fmt_pct(snap['top5'], digits=1)}"
         )
 
     # --- KPI 6: Avg Turnover ---
@@ -233,15 +238,20 @@ def render_top_n_table(
     panel: pd.DataFrame,
     universe: pd.DataFrame,
     ticker_company_map: dict,
+    snapshot_date: pd.Timestamp | None = None,
 ) -> None:
     """
-    Top N Holdings 표 (Latest snapshot, 7컬럼).
+    Top N Holdings 표 (선택 시점 snapshot, 7컬럼).
 
     컬럼:
       1. Rank / 2. Ticker (Company) / 3. Sector / 4. Weight (막대)
       5. Market Cap ($B) / 6. 12m Return / 7. ΔWeight (vs 전월)
+
+    Args:
+        snapshot_date: 표시할 시점 (None 이면 Latest = 마지막 월).
+                       페이지 영역 4 의 시점 슬라이더 값 전달용 (2026-05-12 추가).
     """
-    latest_date = weights.index.max()
+    target_date = snapshot_date if snapshot_date is not None else weights.index.max()
 
     cols_top = st.columns([1.5, 6])
     with cols_top[0]:
@@ -253,33 +263,44 @@ def render_top_n_table(
             format_func=lambda x: f"Top {x}" if x != "All" else "All",
         )
 
-    # Latest 시점 weight > 0 종목, 정렬 후 N 개
-    w_latest = weights.loc[latest_date]
-    w_latest = w_latest[w_latest > 0].sort_values(ascending=False)
+    # 선택 시점 weight > 0 종목, 정렬 후 N 개
+    w_t = weights.loc[target_date]
+    w_t = w_t[w_t > 0].sort_values(ascending=False)
     if top_n_choice != "All":
-        w_latest = w_latest.head(int(top_n_choice))
+        w_t = w_t.head(int(top_n_choice))
 
-    tickers = w_latest.index.tolist()
+    tickers = w_t.index.tolist()
     ticker_to_sector = _build_ticker_to_sector(universe)
 
-    # 데이터 산출
-    mcap = mc.get_market_cap_from_panel(panel, latest_date, tickers) / 1e9  # $B
-    ret_12m = mc.get_12m_return_from_panel(panel, latest_date, tickers)
-    delta_w = mc.calc_delta_weight(weights, latest_date, tickers)
+    # 데이터 산출 (선택 시점 기준)
+    mcap = mc.get_market_cap_from_panel(panel, target_date, tickers) / 1e9  # $B
+    ret_12m = mc.get_12m_return_from_panel(panel, target_date, tickers)
+    delta_w = mc.calc_delta_weight(weights, target_date, tickers)
+    holding_m = mc.calc_holding_period(weights, target_date, tickers)  # 최근 연속 보유 (개월)
 
     df = pd.DataFrame({
         "Rank": range(1, len(tickers) + 1),
         "Ticker": tickers,
         "Company": [ticker_company_map.get(t, t) for t in tickers],
         "Sector": [ticker_to_sector.get(t, "—") for t in tickers],
-        "Weight": w_latest.values,
+        "Weight": w_t.values,
         "Market Cap ($B)": mcap.values,
         "12m Return": ret_12m.values,
         "ΔWeight (vs 전월)": delta_w.values,
+        "보유 (월)": holding_m.values,
     })
 
+    # printf "%.Nf%%" 는 Python ":.N%" 와 달리 자동 ×100 하지 않음.
+    # raw 비율 (0~1) 컬럼들 ×100 적용한 표시용 사본 생성.
+    # 원본 df 는 CSV 다운로드 시 raw 값 유지 (계산용 일관성).
+    df_display = df.copy()
+    pct_cols = ["Weight", "12m Return", "ΔWeight (vs 전월)"]
+    for col in pct_cols:
+        if col in df_display.columns:
+            df_display[col] = df_display[col] * 100
+
     st.dataframe(
-        df,
+        df_display,
         hide_index=True,
         use_container_width=True,
         column_config={
@@ -289,28 +310,33 @@ def render_top_n_table(
             "Sector": st.column_config.TextColumn("Sector", width="medium"),
             "Weight": st.column_config.ProgressColumn(
                 "Weight",
-                format="%.3f%%",
+                format="%.2f%%",
                 min_value=0,
-                max_value=float(df["Weight"].max()) if len(df) > 0 else 1.0,
+                max_value=float(df_display["Weight"].max()) if len(df_display) > 0 else 100.0,
             ),
             "Market Cap ($B)": st.column_config.NumberColumn(
                 "Mcap ($B)", format="%.1f"
             ),
             "12m Return": st.column_config.NumberColumn(
-                "12m Return", format="%.2f%%"
+                "12m Return", format="%+.2f%%",
+                help="종목 자체의 12개월 가격 추세 (펀드 보유 기간 수익이 아님 — 종목 정보 참고용)",
             ),
             "ΔWeight (vs 전월)": st.column_config.NumberColumn(
-                "ΔW", format="%.4f"
+                "ΔW (%p)", format="%+.3f"
+            ),
+            "보유 (월)": st.column_config.NumberColumn(
+                "보유 (월)", format="%d",
+                help="선택 시점부터 거꾸로 끊김 없이 연속 보유한 개월 수 (1 = 이번 달 새로 편입, 큰 값 = 오래 보유)",
             ),
         },
     )
 
-    # CSV 다운로드
+    # CSV 다운로드 (선택 시점 명시) — raw 비율 (0~1) 그대로 다운로드
     csv = df.to_csv(index=False).encode("utf-8-sig")
     st.download_button(
         label="⬇ CSV 다운로드",
         data=csv,
-        file_name=f"holdings_top_{top_n_choice}_{latest_date.strftime('%Y-%m')}.csv",
+        file_name=f"holdings_top_{top_n_choice}_{target_date.strftime('%Y-%m')}.csv",
         mime="text/csv",
         key="holdings_top_n_csv",
     )
@@ -636,17 +662,23 @@ def render_attribution_tornado(
         )
     with cols_t[1]:
         method = st.selectbox(
-            "Attribution 방법",
-            options=["Simple (Brinson 1986)", "Carino Smoothed (Carino 1999)"],
-            index=1,  # default Carino
+            "기여도 계산 방식",
+            options=["단순 합 (월별 합산)", "복리 보정 (장기 일치)"],
+            index=1,  # default = 복리 보정 (학술 표준)
             key="holdings_attr_method",
-            help="Simple = 선형 합 (Brinson 1986 한계 — 누적과 차이) / "
-                 "Carino = log smoothing 으로 Σ = Fund 누적 정확 일치",
+            help=(
+                "**단순 합 (월별 합산)** = 매월 (weight × return) 을 단순히 더함. "
+                "직관적이지만 다기간 누적 시 복리 효과를 반영하지 못해 펀드 전체 수익률과 차이. "
+                "(Brinson 1986)\n\n"
+                "**복리 보정 (장기 일치)** = log smoothing 으로 다기간 복리 효과 반영. "
+                "전체 합계 = 펀드 누적 수익률과 정확히 일치. "
+                "(Carino 1999, multi-period linking 학술 표준)"
+            ),
         )
-    is_carino = method.startswith("Carino")
+    is_carino = method.startswith("복리")
 
     # 기간 boundary
-    period_label_map = {"FULL": "FULL 192m", "TEST": "TEST 168m", "HO": "HO 24m"}
+    period_label_map = {"FULL": "FULL 192m", "TEST": "TEST 168m", "HO": "Hold Out 24m"}
     if period == "TEST":
         s, e = EVAL_PERIODS["TEST"]
     elif period == "HO":
@@ -759,7 +791,7 @@ def render_attribution_tornado(
         .sum()
         .sort_values(ascending=False)
     )
-    st.markdown("**Sector 합계** (보조 — 자세한 분석은 Sector Watch 페이지)")
+    st.markdown("**Sector 합계** (보조)")
     sector_cols = st.columns(min(len(sector_contrib), 6))
     for i, (sector, val) in enumerate(sector_contrib.head(6).items()):
         with sector_cols[i % len(sector_cols)]:
@@ -778,27 +810,27 @@ def render_attribution_tornado(
     if is_carino:
         diff_calc = contrib_sum - calc_R_cum if not pd.isna(calc_R_cum) else np.nan
         st.caption(
-            f"**검증** (기간: {period_label_map.get(period, period)}, **Carino 1999 Logarithmic Smoothing**)"
+            f"**검증** (기간: {period_label_map.get(period, period)}, **복리 보정 방식 — 장기 일치**)"
         )
         st.caption(
-            f"  • Σ Smoothed Contribution = **{contrib_sum:+.2%}**"
+            f"  • Σ 종목별 기여도 = **{contrib_sum:+.2%}**"
         )
         st.caption(
-            f"  • 산출 portfolio R_t 누적 = **{calc_R_cum:+.2%}** "
-            f"(Σ Carino 와 차이: {diff_calc:+.6%} — **수학적 정확 일치** ※ Carino 1999)"
+            f"  • 산출 portfolio 누적 수익률 = **{calc_R_cum:+.2%}** "
+            f"(차이: {diff_calc:+.6%} — **수학적 정확 일치**)"
         )
         st.caption(
-            f"  • 참고 — Fund 실제 net 누적 = {fund_cum:+.2%} "
-            f"(산출 R_t 와의 차이는 panel.ret vs 펀드 내부 ret 차이 + transaction cost 누적, attribution scope 외부)"
+            f"  • 참고 — Fund 실제 Net 누적 = {fund_cum:+.2%} "
+            f"(산출 누적과의 차이는 panel 데이터 vs 펀드 내부 수익률 차이 + 거래비용 누적 — 기여도 분해 범위 외)"
         )
     else:
         diff_fund = contrib_sum - fund_cum if not pd.isna(fund_cum) else np.nan
         st.caption(
-            f"**검증** (기간: {period_label_map.get(period, period)}, **Simple Σ(w × R)**): "
-            f"Σ Contribution = **{contrib_sum:+.2%}** vs "
+            f"**검증** (기간: {period_label_map.get(period, period)}, **단순 합 방식 — 월별 합산**): "
+            f"Σ 종목별 기여도 = **{contrib_sum:+.2%}** vs "
             f"Fund 누적 수익률 = **{fund_cum:+.2%}**  "
-            f"(차이: {diff_fund:+.2%} — Simple Attribution 의 선형 근사 한계 — 장기 누적은 복리이므로 차이 ε 큼 ※ Brinson 1986. "
-            f"정확한 분해는 위 토글에서 **Carino Smoothed** 선택)"
+            f"(차이: {diff_fund:+.2%} — 단순 합은 복리 효과를 반영하지 못해 장기 누적과 차이가 큼. "
+            f"정확한 분해를 위해서는 위 토글에서 **복리 보정 (장기 일치)** 선택)"
         )
 
     # CSV 다운로드 (전체 contribution)

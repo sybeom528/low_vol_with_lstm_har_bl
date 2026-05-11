@@ -54,7 +54,7 @@ render_sidebar()
 
 
 # === 데이터 로드 ======================================================
-fund = load_fund_results()  # default = mat_eq_mcap_raw_he (최종 Top 1)
+fund = load_fund_results()  # default = mat_eq_eq_raw_pap (최종 Top 1)
 weights = fund["weights"]
 comp = fund["comp"]
 fund_ret = fund["ret"]
@@ -73,10 +73,8 @@ render_subheader(
     title_en="Holdings",
     title_ko="보유 종목",
     description=(
-        "보유 종목 / 비중 / 시가총액 분포 / 변천사 분석. "
-        "사이드바에서 기간 (FULL / TEST / HO) 토글 가능. "
-        "Holdings 메트릭 = final/bl_functions 산출 (n_stocks / eff_n / turnover) "
-        "+ 학술 표준 (Hirschman HHI 1945 / Brinson Simple Contribution 1986)."
+        "펀드의 보유 종목 / 비중 / 시가총액 분포 / 시점별 변천을 분석합니다. "
+        "사이드바에서 기간 선택 가능."
     ),
 )
 
@@ -87,31 +85,43 @@ period = st.session_state.get("period", "FULL")
 # === 영역 3: Holdings Summary KPI 6개 =================================
 st.subheader(f"보유 종목 KPI — {period}")
 st.caption(
-    "Number / Effective N / Single HHI / Sector HHI / Top Weights / Latest Turnover. "
-    "Latest snapshot = 최신 월 (2025-12), 기간 평균 = 사이드바 토글 월별 평균. "
-    "vs 균등 = 펀드 universe 균등가중 기준선 (학술 정직 — SPY 503 가정 X)."
+    "**보유 종목 수 / 유효 종목 수 / 종목 집중도 / 섹터 집중도 / 상위 비중 / 회전율**. "
+    "**최신 시점** (2025-12) 값 + **기간 평균** 함께 표시. "
+    "비교 기준은 균등 가중 (모든 종목 동일 비중) 기준선."
 )
 render_holdings_kpi(weights, comp, universe, panel, period)
 st.divider()
 
 
 # === 영역 4: Top N Holdings 표 ========================================
-st.subheader("Top N Holdings — Latest snapshot")
+st.subheader("Top N Holdings — 선택 시점 snapshot")
 st.caption(
-    "현재 보유 종목 Top N (비중 내림차순). "
-    "컬럼: Rank / Ticker (Company) / Sector / Weight / Market Cap / 12m Return / ΔWeight. "
-    "ΔWeight = 전월 대비 비중 변화. 컬럼 헤더 클릭 → 정렬, CSV 다운로드 가능."
+    "선택 시점의 보유 종목 Top N (비중 큰 순). "
+    "시점 슬라이더로 원하는 월 선택 가능 (기본 = 최신 월). "
+    "컬럼: 순위 / 티커 (회사명) / 섹터 / 비중 / 시가총액 / 12m 수익률 / 전월 대비 비중 변화 / 보유 개월. "
+    "**12m 수익률** = 종목 자체 가격 추세 (펀드 보유 기간 수익이 아님, 종목 정보 참고용). "
+    "**보유 (월)** = 선택 시점부터 거꾸로 끊김 없이 연속 보유한 개월 수. "
+    "컬럼 클릭 정렬 + CSV 다운로드 가능."
 )
-render_top_n_table(weights, panel, universe, ticker_company_map)
+# 시점 슬라이더 (영역 5 와 동일 패턴)
+available_dates_top = sorted(weights.index)
+top_snapshot_date = st.select_slider(
+    "시점 선택 (Top N)",
+    options=available_dates_top,
+    value=available_dates_top[-1],  # default = Latest
+    format_func=lambda d: d.strftime("%Y-%m"),
+    key="holdings_top_n_date",
+)
+render_top_n_table(weights, panel, universe, ticker_company_map, snapshot_date=top_snapshot_date)
 st.divider()
 
 
 # === 영역 5: 시가총액 분포 (Bubble + Treemap) =========================
 st.subheader("시가총액 분포 — Bubble + Treemap")
 st.caption(
-    "시점 슬라이더로 월별 시점 선택 가능 (192 시점). "
-    "Treemap = 비중/시가총액 면적 + 섹터/수익률 색상 토글. "
-    "Bubble = X/Y/크기/색상 4축 자유 조합 (시가총액-비중 관계 등 자유 탐색)."
+    "시점 슬라이더로 원하는 월 선택. "
+    "**Treemap** = 비중 / 시가총액 면적 + 색상 변경. "
+    "**Bubble** = X축 / Y축 / 크기 / 색상 자유 조합 (시가총액-비중 관계 등 다각도 탐색)."
 )
 render_market_cap_distribution(weights, panel, universe, ticker_company_map)
 st.divider()
@@ -120,9 +130,8 @@ st.divider()
 # === 영역 6: 보유 종목 변천사 =========================================
 st.subheader("섹터 변천사 — Multi-line")
 st.caption(
-    "11 GICS 섹터별 weight 합계 시계열 — 섹터 단위 펀드 구성 변화. "
-    "종목 단위 동적 변천은 아래 영역 (Top N 합 vs Others) 에서 hover 로 확인. "
-    "시간 단위 토글 (월별 192 / 분기별 64) + Regime 배경색 (R1/R2/R3/HO) + COVID/2022 Bear 이벤트 annotation."
+    "11개 GICS 섹터별 비중 합계 변화 — 섹터 단위 펀드 구성 변천. "
+    "시간 단위 (월별 / 분기별) + 시장 국면 배경 + 주요 이벤트 표시."
 )
 render_holdings_history(weights, universe)
 st.divider()
@@ -131,10 +140,9 @@ st.divider()
 # === 영역 7: 시점별 Top N 합 vs Others (집중도 동적 추세) ============
 st.subheader("시점별 Top N 합 vs Others — 집중도 동적 추세")
 st.caption(
-    "각 시점에서의 Top N ticker (시점별 동적) 의 weight 합 시계열 — 종목 단위 변천 narrative. "
-    "100%-stacked area: Top N (아래 파란 면적) + Others (위 회색 면적) 누적. "
-    "**hover 시 그 시점의 Top N 종목 list + 각 비중 표시**. "
-    "Top 10 = `final.comp.top10_share` 직접 정합 / Top 1 = `final.comp.top1_weight` 정합 / Top 5·20 = 직접 산출."
+    "각 시점에서 상위 N 종목이 차지하는 비중 변화 — 종목 단위 변천 분석. "
+    "누적 면적 (상위 N 파란색 + 나머지 회색). "
+    "**차트 위에 마우스를 올리면 그 시점의 상위 종목 목록과 비중을 확인** 할 수 있습니다."
 )
 render_top_n_share_timeseries(comp, weights)
 st.divider()
@@ -143,18 +151,17 @@ st.divider()
 # === 영역 8: 종목별 기여도 분석 (Tornado) =============================
 st.subheader(f"종목별 기여도 분석 — {period}")
 st.caption(
-    "**Attribution 방법 토글** — Simple (Brinson 1986) / Carino Smoothed (Carino 1999). "
-    "Simple = Σ(w × R) 단일 기간 선형 합 (장기 누적과 차이 큼). "
-    "Carino = log smoothing 으로 Σ = 산출 portfolio R_t 누적 정확 일치 (multi-period linking 학술 표준). "
-    "Top N 양수 + Top N 음수 (학술 정직 — Bottom contributors 도 노출). "
-    "Sector 합계 = Sector Watch 페이지로 navigation."
+    "**기여도 계산 방식 선택**: "
+    "**단순 합 (월별 합산)** — 직관적이지만 장기 누적과 차이 / "
+    "**복리 보정 (장기 일치)** — 다기간 복리 효과 반영, 합계가 펀드 전체 수익률과 정확히 일치 (학술 표준). "
+    "수익 기여 상위 + 손실 기여 상위 함께 표시."
 )
 render_attribution_tornado(weights, panel, universe, ticker_company_map, fund_ret, period)
 
 
 # === 영역 9: Footer ===================================================
 st.caption(
-    "※ 회사명 / 시가총액 / 섹터 매핑: yfinance 기반 "
-    "(`data/ticker_company_map.csv` 캐시, 인수합병 옛 종목 4건은 ticker 자체로 fallback)."
+    "※ 회사명 / 시가총액 / 섹터 정보는 Yahoo Finance 출처입니다 "
+    "(M&A 등으로 정보가 없는 일부 옛 종목은 티커로 표시)."
 )
 render_footer()

@@ -59,6 +59,30 @@ def _filter_period_index(idx: pd.DatetimeIndex, period: str) -> pd.DatetimeIndex
     return idx[(idx >= pd.Timestamp(s)) & (idx <= pd.Timestamp(e))]
 
 
+# === GICS 섹터 영문 → 한글 매핑 (KPI 카드 표시 전용, 2026-05-12) ===========
+# 좁은 KPI 카드 공간에서 영문 섹터명 (Information Technology 등) 이 잘리는 문제 해결.
+# KPI 3, 4, 5 의 sector name 표시 부분에만 적용.
+# 다른 차트 (Treemap, Decomposition 표, Tilt Tornado, Rotation) 는 영문 GICS 표준 유지.
+SECTOR_KO_MAP: dict[str, str] = {
+    "Information Technology": "IT",
+    "Health Care": "헬스케어",
+    "Financials": "금융",
+    "Consumer Discretionary": "임의소비재",
+    "Industrials": "산업재",
+    "Communication Services": "통신",
+    "Consumer Staples": "필수소비재",
+    "Energy": "에너지",
+    "Utilities": "유틸리티",
+    "Real Estate": "부동산",
+    "Materials": "소재",
+}
+
+
+def _sector_ko(sector_name: str) -> str:
+    """GICS 영문 섹터명 → 한글 매핑 (KPI 카드 표시용)."""
+    return SECTOR_KO_MAP.get(sector_name, sector_name[:10])
+
+
 # ======================================================================
 # 영역 3: Sector Summary KPI 5개
 # ======================================================================
@@ -74,10 +98,11 @@ def render_sector_kpi(
     Sector KPI 5개 — Latest snapshot + 사이드바 토글 평균.
 
     1. Sector HHI (Hirschman 1945, sector level)
-    2. Avg |Tilt| vs SPY
-    3. Number of Active Bets (|Tilt| > 1%)
+    2. 섹터 비중 평균 차이 (vs SPY) = Avg |Tilt|
+    3. 섹터 비중 최대 차이 (vs SPY) = Max |Tilt|
+       (2026-05-12 변경: Active Bets → Max |Tilt|, "베팅" 표현 제거)
     4. Most Overweight Sector (이름 + Tilt%)
-    5. Most Underweight Sector (이름 + Tilt%, ★ HO 정당화 narrative 직접 연결)
+    5. Most Underweight Sector (이름 + Tilt%, HO 정당화 narrative 직접 연결)
     """
     latest = weights.index.max()
 
@@ -90,29 +115,38 @@ def render_sector_kpi(
     spy_hhi_latest = float((spy_sw_latest ** 2).sum()) if len(spy_sw_latest) > 0 else np.nan
 
     avg_tilt_latest = float(tilt_latest.abs().mean())
-    active_bets_latest = mc.calc_active_bets(tilt_latest, threshold=0.01)
+    # Max |Tilt| 산출 — 가장 큰 단일 베팅 (under/over 무관)
+    if len(tilt_latest) > 0:
+        max_tilt_latest = float(tilt_latest.abs().max())
+        max_tilt_sector_latest = str(tilt_latest.abs().idxmax())
+        max_tilt_signed_latest = float(tilt_latest.loc[max_tilt_sector_latest])
+    else:
+        max_tilt_latest = np.nan
+        max_tilt_sector_latest = ""
+        max_tilt_signed_latest = np.nan
     most_over = tilt_latest.head(1)
     most_under = tilt_latest.tail(1)
 
     # 기간 평균 (사이드바 토글)
     period_idx = _filter_period_index(weights.index, period)
     if len(period_idx) > 0:
-        hhi_list, avg_tilt_list, bets_list = [], [], []
+        hhi_list, avg_tilt_list, max_tilt_list = [], [], []
         for t in period_idx:
             fsw = mc.calc_sector_weights(weights.loc[t], ticker_to_sector)
             ssw = mc.compute_spy_sector_weights(panel, sp500_membership, t, ticker_to_sector)
             tt = mc.calc_sector_tilt(fsw, ssw)
             hhi_list.append(float((fsw ** 2).sum()))
             avg_tilt_list.append(float(tt.abs().mean()))
-            bets_list.append(mc.calc_active_bets(tt, threshold=0.01))
+            if len(tt) > 0:
+                max_tilt_list.append(float(tt.abs().max()))
         avg_hhi = float(np.mean(hhi_list))
         avg_tilt_mean = float(np.mean(avg_tilt_list))
-        bets_mean = float(np.mean(bets_list))
+        max_tilt_mean = float(np.mean(max_tilt_list)) if max_tilt_list else np.nan
     else:
-        avg_hhi = avg_tilt_mean = bets_mean = np.nan
+        avg_hhi = avg_tilt_mean = max_tilt_mean = np.nan
 
     # 헤더 라벨
-    period_label_map = {"FULL": "FULL 192m", "TEST": "TEST 168m", "HO": "HO 24m"}
+    period_label_map = {"FULL": "FULL 192m", "TEST": "TEST 168m", "HO": "Hold Out 24m"}
     st.caption(
         f"**Latest snapshot**: {latest.strftime('%Y-%m')}  ·  "
         f"**기간 평균**: {period_label_map.get(period, period)}"
@@ -133,26 +167,43 @@ def render_sector_kpi(
 
     with cols[1]:
         st.metric(
-            label="Avg |Tilt| vs SPY",
+            label="섹터 비중 평균 차이 (vs SPY)",
             value=_fmt_pct(avg_tilt_latest, digits=2),
-            help="섹터별 |Tilt| 평균 — 펀드의 액티브 운용 강도",
+            help=(
+                "**11개 GICS 섹터의 |Fund 비중 − SPY 비중| 평균**. "
+                "펀드가 SPY 대비 각 섹터를 얼마나 다르게 보유했는지의 평균 차이 (절대값 평균 — 방향 무관). "
+                "예: 5%p = 각 섹터가 평균적으로 SPY 대비 ±5%p 차이. "
+                "일반 active fund 4-8%p, passive ~0%p."
+            ),
         )
         st.caption(f"평균 {_fmt_pct(avg_tilt_mean, digits=2)}")
 
     with cols[2]:
+        # Max |Tilt| — 단일 섹터 최대 차이 (under/over 무관)
         st.metric(
-            label="Active Bets",
-            value=f"{active_bets_latest}",
-            help="|Tilt| > 1% 인 섹터 수 — 액티브 베팅 분산",
+            label="섹터 비중 최대 차이 (vs SPY)",
+            value=_fmt_pct(max_tilt_latest, digits=2),
+            help=(
+                "**가장 큰 단일 섹터 비중 차이의 크기** = max |Fund 비중 − SPY 비중|. "
+                "방향 (over/under) 무관 — 절대값 기준. "
+                "펀드가 SPY 대비 어느 섹터에서 가장 다르게 운용했는지 그 크기를 보여줍니다 "
+                "(어느 섹터인지는 KPI 4 / 5 참조). "
+                "KPI 2 (평균 차이) 와 짝 — 평균 vs 최대."
+            ),
         )
-        st.caption(f"평균 {bets_mean:.1f}" if not pd.isna(bets_mean) else "평균 —")
+        # 부호 + 섹터명 표시 (섹터명 한글 매핑)
+        sign_str = f"{max_tilt_signed_latest * 100:+.2f}%p"
+        st.caption(
+            f"{_sector_ko(max_tilt_sector_latest)}: {sign_str}  ·  "
+            f"평균 {_fmt_pct(max_tilt_mean, digits=2)}"
+        )
 
     with cols[3]:
         if len(most_over) > 0:
             sec, val = most_over.index[0], float(most_over.iloc[0])
             st.metric(
                 label="Most Overweight",
-                value=sec[:15],
+                value=_sector_ko(sec),
                 delta=f"{val:+.2%}",
                 delta_color="off",
                 help=f"펀드 vs SPY 가장 큰 over-weight 섹터: {sec}",
@@ -161,14 +212,12 @@ def render_sector_kpi(
     with cols[4]:
         if len(most_under) > 0:
             sec, val = most_under.index[0], float(most_under.iloc[0])
-            star = " ★" if "Information Technology" in sec else ""
             st.metric(
-                label=f"Most Underweight{star}",
-                value=sec[:15],
+                label="Most Underweight",
+                value=_sector_ko(sec),
                 delta=f"{val:+.2%}",
                 delta_color="off",
-                help=f"펀드 vs SPY 가장 큰 under-weight 섹터: {sec}. "
-                     f"{'IT under-weight = HO 정당화 narrative 핵심' if star else ''}",
+                help=f"펀드 vs SPY 가장 큰 under-weight 섹터: {sec}",
             )
 
 
@@ -262,15 +311,23 @@ def render_sector_decomposition_table(
         st.warning("Sector Decomposition 산출 실패.")
         return
 
+    # printf style "%.2f%%" 는 Python ":.2%" 와 달리 자동 ×100 하지 않음.
+    # 표시용 사본을 만들어 % 컬럼들에 ×100 적용 (원본 df 는 CSV 다운로드용으로 보존).
+    df_display = df.copy()
+    pct_cols = ["Weight", "Tilt", "Return_12m", "Volatility", "Contribution"]
+    for col in pct_cols:
+        if col in df_display.columns:
+            df_display[col] = df_display[col] * 100
+
     st.dataframe(
-        df,
+        df_display,
         hide_index=True,
         use_container_width=True,
         column_config={
             "Sector": st.column_config.TextColumn("Sector", width="medium"),
             "Weight": st.column_config.ProgressColumn(
                 "Weight", format="%.2f%%", min_value=0,
-                max_value=float(df["Weight"].max()) if len(df) > 0 else 1.0,
+                max_value=float(df_display["Weight"].max()) if len(df_display) > 0 else 100.0,
             ),
             "Tilt": st.column_config.NumberColumn(
                 "Tilt vs SPY", format="%+.2f%%",
@@ -285,6 +342,7 @@ def render_sector_decomposition_table(
         },
     )
 
+    # CSV 는 raw 비율 (0~1) 그대로 다운로드 (계산용 일관성 유지)
     csv = df.to_csv(index=False).encode("utf-8-sig")
     st.download_button(
         label="⬇ CSV 다운로드",
@@ -350,8 +408,8 @@ def render_sector_tilt_tornado(
     )
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
-        "임계선: ±1% (점선, Active Bets 기준) · ±5% (대시, 큰 베팅). "
-        "★ = Information Technology (HO 정당화 narrative 핵심)."
+        "임계선: ±1% (점선, 의미 있는 차이) · ±5% (대시, 큰 차이). "
+        "★ = Information Technology (Hold Out 24m 정당화 narrative 핵심)."
     )
 
 
@@ -476,21 +534,23 @@ def render_ho_justification(
     fund_spy: pd.Series,
 ) -> None:
     """
-    HO 24m 정당화 narrative — 영역 8 핵심.
+    Hold Out 24m 분석 — 영역 8 핵심.
 
     1. 학술 narrative 박스 (Markowitz 1952)
-    2. Chart 1: SPY IT Mcap (좌축) + Fund IT Tilt (우축) 이중 축
-    3. Chart 2: HO 24m Sector Contribution Tornado
-    4. Chart 3: Regime 별 Sector HHI 추세 (Fund vs SPY)
-    5. 결론 박스 (장기 분산의 가치)
+    2. Chart 1: SPY IT 비중 (좌축) + Fund IT Tilt (우축) 이중 축
+    3. Chart 2: IT 섹터 평균 변동성 vs 시장 평균 (2026-05-12 신규 — LSTM vol-target 근거)
+    4. Chart 3: Hold Out 24m Sector Contribution Tornado
+    5. Chart 4: Regime 별 Sector HHI 추세 (Fund vs SPY)
+    6. 결론 박스 (장기 분산의 가치)
     """
-    # === 1. 학술 narrative 박스 ===
+    # === 1. 도입 narrative 박스 ===
     st.info(
-        "ℹ️ **Markowitz (1952) 평균-분산 이론** + **Fama-French (1992) factor diversification** 관점에서, "
-        "본 펀드 (BL+LSTM vol-target) 는 **단순 sector 분산이 아닌 risk-aware (vol-target) 분산** 운용입니다. "
-        "→ 시장 변동성에 따라 sector 집중 (예: 2017 R2 Defensive 도피) / sector 분산 (HO 24m) 을 "
-        "동적으로 선택. **HO 24m 의 IT under-weight** 는 AI Rally 시기의 trade-off 이며, "
-        "장기 vol-targeted 분산 운용의 본질을 보여주는 의도된 결과입니다."
+        "ℹ️ 본 펀드 (**BL+LSTM 변동성 예측** 모델) 는 단순한 섹터 분산이 아니라, "
+        "**시장 변동성에 따라 비중을 조정하는 적응형 분산 운용** 입니다. "
+        "시장 상황에 따라 섹터 집중 (예: 2017 방어주 선호 시기) 과 섹터 분산 (Hold Out 24m) 을 "
+        "동적으로 선택합니다. **Hold Out 24m 시기의 IT 축소 (under-weight)** 는 "
+        "AI Rally 라는 단기 시장 쏠림에 따른 트레이드오프이며, "
+        "장기 변동성 인지 운용의 일관성을 보여주는 의도된 결과입니다."
     )
 
     # === 2. Chart 1: SPY IT Mcap + Fund IT Tilt 이중 축 ===
@@ -541,8 +601,78 @@ def render_ho_justification(
     )
     st.divider()
 
-    # === 3. Chart 2: HO 24m Sector Contribution Tornado ===
-    st.markdown("##### Chart 2 — HO 24m Sector Contribution (Carino smoothed)")
+    # === 3. Chart 2 (신규 2026-05-12): IT 섹터 변동성 − 시장 평균 차이 ===
+    # 본 펀드의 LSTM 기반 변동성 인지 운용 → IT under-weight 의 학술적 근거.
+    # 두 라인 비교 대신 "차이 (Spread)" 시계열로 IT 가 시장 대비 얼마나 더 변동성이 큰지 직관 표현.
+    st.markdown("##### Chart 2 — IT 섹터 변동성 − 시장 평균 (Spread, %p)")
+
+    it_avg_vol = (
+        panel[panel["gics_sector"] == "Information Technology"]
+        .groupby("date")["vol_60d"].mean()
+    )
+    market_avg_vol = panel.groupby("date")["vol_60d"].mean()
+
+    # 펀드 운용 기간 (2010-01 이후) 만
+    fund_start = pd.Timestamp("2010-01-01")
+    it_avg_vol = it_avg_vol[it_avg_vol.index >= fund_start]
+    market_avg_vol = market_avg_vol[market_avg_vol.index >= fund_start]
+
+    # IT − 시장 차이 (%p)
+    common_idx = it_avg_vol.index.intersection(market_avg_vol.index)
+    vol_spread = (it_avg_vol.loc[common_idx] - market_avg_vol.loc[common_idx]) * 100  # %p
+
+    # Hold Out 기간 평균 + 전체 평균 (caption 용)
+    ho_start_dt = pd.Timestamp(EVAL_PERIODS["HOLD_OUT"][0])
+    ho_gap = float(vol_spread[vol_spread.index >= ho_start_dt].mean())
+    full_gap = float(vol_spread.mean())
+
+    fig_v = go.Figure()
+    # 양수 영역 채움 (IT > 시장 — under-weight 정당화 영역)
+    fig_v.add_trace(go.Scatter(
+        x=vol_spread.index, y=vol_spread.values,
+        name="IT − 시장 변동성 차이",
+        line=dict(color=COLORS["accent_red"], width=2.5),
+        fill="tozeroy",
+        fillcolor="rgba(239, 68, 68, 0.18)",  # accent_red with alpha
+        hovertemplate="%{x|%Y-%m}<br>차이: %{y:+.2f}%p<extra></extra>",
+    ))
+    # 0 기준선 (시장 평균과 동일한 변동성 수준)
+    fig_v.add_hline(
+        y=0, line_dash="solid",
+        line_color=COLORS["text_muted"], line_width=1.2,
+        annotation_text="시장 평균", annotation_position="bottom right",
+    )
+    # 전체 평균선
+    fig_v.add_hline(
+        y=full_gap, line_dash="dash",
+        line_color=COLORS["accent_amber"], line_width=1,
+        annotation_text=f"16년 평균 +{full_gap:.2f}%p",
+        annotation_position="top right",
+    )
+    fig_v = add_regime_backgrounds(fig_v, with_labels=False)
+    fig_v = add_event_annotations(fig_v)
+    fig_v.update_layout(
+        template="plotly_dark",
+        paper_bgcolor=COLORS["background"], plot_bgcolor=COLORS["background"],
+        font_color=COLORS["text"],
+        xaxis_title="시점", yaxis_title="변동성 차이 (%p) — IT 평균 − 시장 평균",
+        height=380, hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    st.plotly_chart(fig_v, use_container_width=True)
+    st.caption(
+        f"IT 섹터 평균 변동성이 시장 평균보다 **일관되게 높음** "
+        f"(거의 항상 0 위 = 빨간 영역). "
+        f"**전체 평균 +{full_gap:.2f}%p**, **Hold Out 24m 평균 +{ho_gap:.2f}%p** "
+        f"(Hold Out 시기에 차이 ↑ — IT 변동성이 시장보다 더 spike). "
+        f"본 펀드는 **LSTM 변동성 예측** 기반 운용 → 변동성 큰 종목/섹터에 낮은 confidence → "
+        f"**IT under-weight 의 학술적 근거**. "
+        f"다만 AI Rally 시기 IT 가 변동성에도 불구하고 큰 상승 → **변동성 ≠ 수익** 의 단기 trade-off."
+    )
+    st.divider()
+
+    # === 4. Chart 3: HO 24m Sector Contribution Tornado ===
+    st.markdown("##### Chart 3 — Hold Out 24m Sector Contribution (복리 보정)")
 
     ho_start = pd.Timestamp(EVAL_PERIODS["HOLD_OUT"][0])
     ho_end = pd.Timestamp(EVAL_PERIODS["HOLD_OUT"][1])
@@ -584,8 +714,8 @@ def render_ho_justification(
         )
     st.divider()
 
-    # === 4. Chart 3: Regime 별 Sector HHI ===
-    st.markdown("##### Chart 3 — Regime 별 Sector HHI (Fund vs SPY)")
+    # === 5. Chart 4: Regime 별 Sector HHI ===
+    st.markdown("##### Chart 4 — Regime 별 Sector HHI (Fund vs SPY)")
 
     regimes = {
         "R1 회복기 (2010-2012)": ("2010-01-01", "2012-06-30"),
@@ -637,16 +767,19 @@ def render_ho_justification(
     )
     st.divider()
 
-    # === 5. 결론 박스 ===
+    # === 6. 결론 박스 ===
     st.success(
-        "✅ **결론: Vol-targeted 적응형 운용의 가치**\n\n"
-        "**Markowitz (1952)** 의 평균-분산 이론과 **Fama-French (1992)** 의 factor diversification 관점에서, "
-        "본 펀드의 BL+LSTM vol-target 모델은 **단순 sector 분산이 아닌 risk-aware 분산** 운용입니다.\n\n"
-        "**R1/R3/HO 분산 시기 + R2 Defensive 도피 시기** 모두 vol-target 학습의 결과 — "
-        "장기 168m 학습 구간에서 시장 변동성에 적응하며 우수한 위험조정 성과 (Sharpe 1.05, Sortino 1.86) 를 입증했습니다.\n\n"
-        "**HO 24m 의 단기 underperform**: SPY 의 IT 집중 (33.30%) vs Fund 의 IT under-weight (-33.31%) "
-        "→ AI Rally 시기 sector concentration 의 trade-off. 펀드는 R3/HO 에서 sector 분산을 회복했고 "
-        "(Fund HHI 0.14 < SPY HHI 0.16), 이는 vol-target 분산 운용의 본질이 손상되지 않았음을 보여줍니다.\n\n"
-        "**핵심**: 단기 sector concentration 시기 (2024 AI Rally) 의 underperform 은 "
-        "**vol-targeted 분산 운용의 의도된 trade-off** 이며, 장기 risk-aware 운용의 가치를 검증합니다."
+        "✅ **결론: 변동성 기반 적응형 운용의 가치**\n\n"
+        "본 펀드의 **BL+LSTM 변동성 예측 모델** 은 단순한 섹터 분산이 아닌 "
+        "**변동성을 인지한 적응형 분산 운용** 입니다.\n\n"
+        "**회복기 / 변동기 / Hold Out 분산 시기** + **확장기 방어주 선호 시기** 모두 "
+        "시장 변동성에 따른 적응 결과입니다. 학습 기간 14년 (168개월) 동안 "
+        "시장 변화에 적응하며 **우수한 위험 조정 성과 (Sharpe 1.05, Sortino 1.86)** 를 입증했습니다.\n\n"
+        "**Hold Out 24m (2024-2025) 의 단기 부진**: 시장의 IT 쏠림 (SPY IT 비중 33.30%) vs "
+        "펀드의 IT 축소 (-33.31%p 차이) → AI Rally 라는 단기 섹터 쏠림 시기의 트레이드오프. "
+        "펀드는 이 시기에도 **섹터 분산을 유지** (Fund 집중도 0.14 < SPY 0.16) 하여 "
+        "운용 철학의 일관성을 잃지 않았습니다.\n\n"
+        "**핵심**: 2024-2025 AI Rally 시기의 단기 부진은 "
+        "**변동성 인지 분산 운용의 의도된 단기 비용** 이며, "
+        "장기 위험 인지 운용의 가치를 입증합니다."
     )
