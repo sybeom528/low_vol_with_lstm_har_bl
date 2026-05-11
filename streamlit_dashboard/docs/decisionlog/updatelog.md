@@ -187,6 +187,47 @@
   - Cont 2001, Hill 1975, Embrechts 1997 등 학술 표준 인용으로 근거 명시
   - 실무 패턴 (월별 NAV + 일별 risk) 으로 narrative 정당화
 
+### Investment Simulator 시점 입력 월말 명확화 (옵션 A — a-1 방식)
+- **카테고리**: UX / Code Structure / 학술 정직성
+- **발견 경위**:
+  - Task C (시뮬레이션 일별 시점 지원 결정) 논의 중 시뮬레이터 UI 가 `st.date_input` 으로 임의 일별 날짜를 받지만, 백엔드 시뮬 함수는 `fund_ret[(index >= start) & (index <= end)].dropna()` 슬라이싱으로 월말 시점만 사용 → UI ↔ 백엔드 불일치 식별
+  - 임의 일별 입력 시 실제 사용 시점이 사용자에게 안 보이는 채로 가장 가까운 월말로 점프 → 일부 입력은 빈 데이터로 warning 출력 → 사용자 혼란
+- **3 옵션 검토**:
+  - **옵션 A (월별 명확화)**: 입력은 일별 받되 백엔드에서 월말로 snap + 변환 결과 명시. **권장 채택**.
+  - 옵션 B (일별 with anchoring): 펀드 일별 NAV 가 backtest 결과로 존재하지 않으므로 합성 필요 → 학술적 fragility 우려, 4-8시간 구현
+  - 옵션 C (현재 유지 + caption 만): UI ↔ 백엔드 불일치 해소 안 됨
+- **선택 사유 (옵션 A)**:
+  - 펀드 backtest 산식 정합 (월말 리밸런싱 모델, `monthly_panel.fwd_ret_1m`) 보장
+  - CLAUDE.md "데이터 drop / 변형 기준 최대한 보수적" 부합
+  - 학술 정직성 caption + expander 패턴이 Performance / Risk Metrics 의 분포 통계 영역과 일관 (옵션 β 후속)
+- **변경 내역**:
+  - `lib/simulator_charts.py`:
+    - 신규 헬퍼 `_snap_to_month_end(input_date, available_dates, direction)` (forward / backward snap)
+    - `render_input_section(available_dates=None)` 시그니처 변경 (backwards-compatible — None 시 기존 동작)
+    - 시점 입력 위 caption 추가 (월말 기준 안내, 사용자 친화 표현)
+    - date_input 직후 자동 변환 + 변환 결과 `st.info` 메시지 (입력 ≠ 변환된 시점일 때만)
+    - 시점 산정 방식 안내 expander 추가 (3 섹션 — 왜 월말 / 변환 규칙 / 왜 일별 미지원)
+  - `pages/02_Investment_Simulator.py`:
+    - `render_input_section()` → `render_input_section(available_dates=fund_ret.index)` (1 라인 변경)
+- **사용자 친화 작성 원칙** (사용자 피드백 반영):
+  - 코드 변수명 (`monthly_panel.fwd_ret_1m`, `forward snap` 등) 은 UI 텍스트에서 제거
+  - "월말 리밸런싱 모델" → "매월 한 번씩 종목 비중을 재조정"
+  - "portfolio weight" → "종목 비중"
+  - "학술적 fragility" → "실제 펀드 운용 방식과 차이가 발생할 수 있음"
+  - 코드 docstring + updatelog (개발자용) 은 기존 학술 용어 유지 (일관성)
+- **검증 (8 테스트 케이스 PASS)**:
+  - 월중 입력 → 다음/이전 월말 변환 ✅
+  - 정확한 월말 입력 → 그대로 유지 ✅
+  - 월초 입력 → forward 시 해당 달 월말 ✅
+  - 범위 밖 입력 → 가장 가까운 경계 (2009-12-15 → 2010-01-31 / 2026-06-15 → 2025-12-31) ✅
+- **영향 범위**:
+  - 정확한 월말 입력 시 결과 동일 (이전 동작 보존)
+  - 임의 날짜 입력 시 명시적 변환 안내 + 일관된 결과
+  - `available_dates=None` fallback 으로 기존 호출 코드 backwards-compatible
+  - 백엔드 시뮬레이션 함수 (`simulate_lump_sum` / `simulate_dca` / `simulate_goal_based`) 변경 없음
+  - 다른 페이지 영향 없음
+- **영향 파일**: `lib/simulator_charts.py`, `pages/02_Investment_Simulator.py`
+
 ### TC override 도입 (편측 10bp → 편측 20bp, 펀드 의도값) — `lib/data_loader.py`
 - **카테고리**: Data / Bug Fix / 학술 정직성
 - **발견 경위**:

@@ -82,7 +82,7 @@ render_simulator_disclaimer()
 
 # === 영역 3: Input 영역 ================================================
 st.subheader("시뮬레이션 입력")
-sim_input = render_input_section()
+sim_input = render_input_section(available_dates=fund_ret.index)
 st.divider()
 
 

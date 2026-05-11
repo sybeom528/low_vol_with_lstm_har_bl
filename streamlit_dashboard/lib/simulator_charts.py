@@ -23,10 +23,49 @@ from lib.plot_helpers import add_event_annotations, add_regime_backgrounds
 
 
 # ======================================================================
+# 헬퍼 함수 — 시점 변환 (월말 snap, 2026-05-12 신규)
+# ======================================================================
+
+def _snap_to_month_end(
+    input_date,
+    available_dates: pd.DatetimeIndex,
+    direction: str = "forward",
+) -> pd.Timestamp:
+    """
+    일별 날짜를 펀드 backtest 의 월말 시점으로 변환 (snap to month-end).
+
+    펀드는 월말 리밸런싱 모델 (`monthly_panel.fwd_ret_1m` 산식) 이므로 backtest 결과
+    가 월말 시점에만 존재. 사용자가 입력한 임의 일별 날짜를 산식 정합되는 월말로 변환.
+
+    Parameters
+    ----------
+    input_date : pd.Timestamp | datetime.date
+        사용자가 date_input 으로 입력한 일별 날짜
+    available_dates : pd.DatetimeIndex
+        펀드 backtest 가 존재하는 월말 시점 목록 (예: fund_ret.index)
+    direction : {"forward", "backward"}
+        - "forward": 입력일 이후 첫 월말 (시작 시점용)
+        - "backward": 입력일 이전 마지막 월말 (종료 시점용)
+
+    Returns
+    -------
+    pd.Timestamp
+        조정된 월말 시점. 입력일이 가능 범위 밖이면 가장 근접한 경계 반환.
+    """
+    input_ts = pd.Timestamp(input_date)
+    if direction == "forward":
+        candidates = available_dates[available_dates >= input_ts]
+        return candidates[0] if len(candidates) > 0 else available_dates[-1]
+    else:  # backward
+        candidates = available_dates[available_dates <= input_ts]
+        return candidates[-1] if len(candidates) > 0 else available_dates[0]
+
+
+# ======================================================================
 # 영역 3: Input 영역 (Tab 전환 + 다단 입력)
 # ======================================================================
 
-def render_input_section() -> dict:
+def render_input_section(available_dates: pd.DatetimeIndex | None = None) -> dict:
     """
     Tab 전환 + 시점 입력 + 금액 입력. dict 반환:
       {
@@ -39,6 +78,13 @@ def render_input_section() -> dict:
       }
 
     데이터 범위 (2010-01-31 ~ 2025-12-31) 안에서만 가능.
+
+    Parameters
+    ----------
+    available_dates : pd.DatetimeIndex | None (2026-05-12 신규)
+        펀드 backtest 가 존재하는 월말 시점 목록 (예: fund_ret.index).
+        - None: 시점 변환 안 함 (기존 동작, backwards-compatible)
+        - 제공: 입력 일별 날짜를 가장 가까운 월말로 자동 변환 + 변환 결과 안내
     """
     DATA_MIN = pd.Timestamp("2010-01-31")
     DATA_MAX = pd.Timestamp("2025-12-31")
@@ -83,6 +129,11 @@ def render_input_section() -> dict:
         st.caption("Goal-based 역산 — 시작/종료 + 목표 금액 → 필요 초기 투자 금액.")
 
     # 공통: 시작 / 종료 시점
+    st.caption(
+        "**백테스팅 기간: 2010년 1월 ~ 2025년 12월 (총 192개월) 만 지원됩니다.** "
+        "본 펀드는 매월 한 번씩 종목 비중을 재조정하므로 성과는 월말 단위로 측정되며, "
+        "임의의 날짜를 입력하시면 가장 가까운 월말로 자동 변환됩니다."
+    )
     c1, c2 = st.columns(2)
     with c1:
         start_date = st.date_input(
@@ -95,6 +146,46 @@ def render_input_section() -> dict:
             "종료 시점", value=DATA_MAX.date(),
             min_value=DATA_MIN.date(), max_value=DATA_MAX.date(),
             key="sim_end_date",
+        )
+
+    # 일별 입력 → 월말 시점 변환 (펀드 backtest 산식 정합)
+    if available_dates is not None and len(available_dates) > 0:
+        start_snapped = _snap_to_month_end(start_date, available_dates, "forward")
+        end_snapped = _snap_to_month_end(end_date, available_dates, "backward")
+        messages = []
+        if pd.Timestamp(start_date) != start_snapped:
+            messages.append(f"시작: `{start_date}` → **{start_snapped.date()}**")
+        if pd.Timestamp(end_date) != end_snapped:
+            messages.append(f"종료: `{end_date}` → **{end_snapped.date()}**")
+        if messages:
+            st.info(
+                "🔄 **입력하신 날짜가 가장 가까운 월말로 자동 변환되었습니다.** "
+                "시작 시점은 입력일 이후 첫 월말로, 종료 시점은 입력일 이전 마지막 월말로 변환됩니다.\n\n"
+                + "\n".join([f"- {m}" for m in messages])
+            )
+        start_date, end_date = start_snapped.date(), end_snapped.date()
+
+    # 시점 산정 방식 안내 expander
+    with st.expander("ℹ️ 시점 산정 방식 안내"):
+        st.markdown(
+            """
+            **왜 월말 시점만 사용하나요?**
+            - 본 펀드는 **매월 말일에 한 번씩** 종목 비중을 재조정합니다 (월별 리밸런싱 방식)
+            - 따라서 펀드 성과 데이터는 매월 말일 기준으로 정확하게 측정되어 있습니다
+            - 사용 가능한 기간: **2010년 1월 ~ 2025년 12월 (총 192개월)**
+
+            **시점 변환 규칙**
+            - **시작 시점**: 입력하신 날짜 이후의 첫 월말로 변환
+              - 예시: 2015-01-15 입력 → 2015-01-31 로 시작
+            - **종료 시점**: 입력하신 날짜 이전의 마지막 월말로 변환
+              - 예시: 2025-12-15 입력 → 2025-11-30 로 종료
+            - 정확히 월말 날짜를 입력하시면 그대로 사용됩니다
+
+            **왜 일별 시점은 지원하지 않나요?**
+            - 본 펀드의 성과는 월말 시점에만 실제로 측정되어 있습니다
+            - 임의의 일별 시점에 대한 성과는 가정에 기반한 추정이 필요한데, 이는 실제 펀드 운용 방식과 차이가 발생할 수 있습니다
+            - 본 시뮬레이션은 **실제로 측정된 시점만 사용**하여 정확한 결과를 보장합니다
+            """
         )
 
     sim_input: dict = {
