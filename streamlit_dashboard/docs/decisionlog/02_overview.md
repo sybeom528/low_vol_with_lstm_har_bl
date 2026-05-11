@@ -57,6 +57,21 @@
 
 ---
 
+> ## 📌 사후 정정 — 2026-05-12 (walk-forward narrative)
+>
+> 본 페이지의 일부 결정 (영역 1 결정 항목 2-3 근거 / 영역 5 결정 비교표 / 영역 6 Disclosure 와이어프레임) 에서 "**학습 / 검증 분리**" 표현이 사용되었습니다. 사용자 정정 (2026-05-12) 으로 본 펀드의 정확한 구조가 확인되었습니다.
+>
+> **정정 사실**:
+> - LSTM 변동성 예측 + Black-Litterman 산식 **모두 walk-forward 방식** 으로 적용
+> - 매 시점 t 의 운용 결정 시 **그 시점 이전 데이터만** 사용 → overfitting + look-ahead bias **원천 차단**
+> - **TEST 168m / Hold Out 24m 분리** = 학습 / 검증 분리가 아닌 **성과 표시용 단순 기간 분리**
+>
+> **본문 내 표현**: 결정 당시 narrative 는 그대로 보존 (역사적 사실) + inline 정정 마커 (`~~원본~~ → [정정 2026-05-12: ...]`) 로 표시.
+>
+> 자세한 이력: `updatelog.md` 의 "About 페이지 본문 구현 + Walk-forward narrative 정합화" 항목.
+
+---
+
 
 ## C-1-1. Overview 페이지
 
@@ -135,7 +150,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Adaptive VolControl Fund                  ● Active         │
-│  어댑티브 볼컨트롤 펀드                       Benchmark: SPY  │
+│  변동성 인지 적응 펀드                       Benchmark: SPY  │
 │  변동성 예측 기반 적응형 자산배분 —             Data: 2025-12 │
 │  Volatility-Aware Adaptive Allocation                       │
 └─────────────────────────────────────────────────────────────┘
@@ -212,7 +227,7 @@
 1. **학술 정직성**: in-sample (TEST 168m) / OOS (HO 24m) 분리는 ML 표준
 2. **가상 투자자 정직성**: HO 부진 솔직 노출 → 신뢰성 ↑
 3. **HO 부진 회피 의심 제거**: 두 숫자 동시 표시로 감추지 않음
-4. **메시지 일관성**: TEST (학습) + HO (검증) narrative 직접 연결
+4. **메시지 일관성**: ~~TEST (학습) + HO (검증)~~ → **[정정 2026-05-12: TEST + HO 모두 walk-forward 운용 (단순 기간 분리)]** narrative 직접 연결
 5. **(b)/(c) 약점 모두 회피**: TEST only 의 "왜 TEST 만?" 의심 + FULL 의 평균값 묻힘 둘 다 해결
 
 #### 결정 항목 2-4: 카드 디자인
@@ -773,7 +788,7 @@ def compute_ivw_returns(monthly_panel, sp500_membership, fund_dates):
 | F | Sortino 우수 | "하방위험 대비 우수" | Sortino > SPY |
 | G | Down Capture 우수 | "하락장 SPY 대비 방어" | Down Capture |
 | H | Sector-balanced | "IT 집중 회피, 분산" | Sector HHI |
-| I | OOS 검증 (HO 24m) | "168m 학습 + 24m 검증" | TEST/HO 분리 |
+| I | OOS 검증 (HO 24m) | ~~"168m 학습 + 24m 검증"~~ → **[정정 2026-05-12: "168m + 24m 모두 walk-forward 운용 (단순 기간 분리)"]** | TEST/HO 분리 |
 | J | Win Rate 우수 | "양수 월 비율 ↑" | Win Rate |
 
 **검토된 카드 3개 조합**:
@@ -1034,6 +1049,9 @@ def compute_ivw_returns(monthly_panel, sp500_membership, fund_dates):
 4. 가상 투자자 신뢰 ↑ — "감추지 않는 펀드"
 
 **Disclosure 텍스트 안** (2026-05-10 결정 당시):
+
+> ⚠️ 아래 코드 블록의 `"(학습 168m + 검증 24m)"` 은 결정 당시 표현입니다. 사후 정정 (2026-05-12): walk-forward 방식이므로 정확히는 **"TEST 168m + Hold Out 24m, 모두 walk-forward 운용 (단순 기간 분리)"**. 코드 블록은 결정 당시 narrative 그대로 보존.
+
 ```
 ※ 본 결과는 백테스트 시뮬레이션이며 실제 운용 성과를 보장하지 않습니다.
    데이터 기간: 2010-01 ~ 2025-12 (학습 168m + 검증 24m)
@@ -1063,6 +1081,8 @@ def compute_ivw_returns(monthly_panel, sp500_membership, fund_dates):
 4. **GitHub link**: 코드 공개 → 학술 검증 가능 (재현성)
 
 #### 시각화 예시 (영역 6)
+
+> ⚠️ 아래 와이어프레임의 `"(학습 168m + 검증 24m)"` 은 결정 당시 표현입니다. 사후 정정 (2026-05-12): walk-forward 방식이므로 정확히는 **"TEST 168m + Hold Out 24m, 모두 walk-forward 운용 (단순 기간 분리)"**. 와이어프레임은 결정 당시 narrative 그대로 보존.
 
 ```
 [영역 5: Navigation Cards 7개]
@@ -1102,7 +1122,7 @@ def compute_ivw_returns(monthly_panel, sp500_membership, fund_dates):
 ┌───────────────────────────────────────────────────────────────────┐
 │ [영역 1: Header — 좌측 정렬]                                       │
 │ Adaptive VolControl Fund                              ● Active     │
-│ 어댑티브 볼컨트롤 펀드                                Benchmark: SPY│
+│ 변동성 인지 적응 펀드                                Benchmark: SPY│
 │ 변동성 예측 기반 적응형 자산배분 —                    Data: 2025-12 │
 │ Volatility-Aware Adaptive Allocation                              │
 └───────────────────────────────────────────────────────────────────┘

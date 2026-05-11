@@ -116,7 +116,7 @@ def render_sidebar() -> None:
     with st.sidebar:
         # ── 펀드명 + 메타 (C4-3) ──
         st.markdown("# Adaptive VolControl Fund")
-        st.markdown("어댑티브 볼컨트롤 펀드")
+        st.markdown("변동성 인지 적응 펀드")
         st.caption("Benchmark: SPY  |  Data: 2010-01 ~ 2025-12")
         st.divider()
 

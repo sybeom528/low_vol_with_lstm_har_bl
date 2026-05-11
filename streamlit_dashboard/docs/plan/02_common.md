@@ -15,7 +15,7 @@ C-4 결정 (5 그룹 → 6 그룹 갱신, F-6 Investment Simulator 추가):
 ```
 ┌──────────────────────────┐
 │ Adaptive VolControl Fund │   ← 텍스트 마크 (B-5)
-│ 어댑티브 볼컨트롤 펀드   │
+│ 변동성 인지 적응 펀드   │
 │                          │
 │ Benchmark: SPY           │   ← 메타 (C4-3)
 │ Data: 2025-12            │
@@ -79,7 +79,7 @@ init_session_state()
 with st.sidebar:
     # === 펀드명 + 메타 (C4-3) ===
     st.markdown("# Adaptive VolControl Fund")
-    st.markdown("어댑티브 볼컨트롤 펀드")
+    st.markdown("변동성 인지 적응 펀드")
     st.caption("Benchmark: SPY  |  Data: 2025-12")
     st.divider()
 

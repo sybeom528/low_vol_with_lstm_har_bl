@@ -375,7 +375,7 @@ _DIFFERENTIATOR_CARDS = [
         "icon": "✅",
         "title_en": "Validated Across Market Regimes",
         "title_ko": "시장 국면별 검증 완료",
-        "body": "회복기 / 확장기 / 변동기 + 24m Hold Out 검증",
+        "body": "회복기 / 확장기 / 변동기 + Hold Out 24m (최근 2년) 구간",
         "value_template": "Sortino (TEST): {sortino}",
         "metric_key": "sortino",
         "citation": "Walk-forward (is=1250d / oos=21d / embargo=63d)",

@@ -1,6 +1,6 @@
 # Adaptive VolControl Fund — Streamlit 대시보드 구현 계획 (Plan)
 
-> **프로젝트**: Adaptive VolControl Fund (어댑티브 볼컨트롤 펀드) Streamlit 펀드 홍보 대시보드
+> **프로젝트**: Adaptive VolControl Fund (변동성 인지 적응 펀드) Streamlit 펀드 홍보 대시보드
 > **모델**: `mat_eq_eq_raw_pap` (최종 확정 Top 1, 2026-05-11 4차 변경)
 > **작성 시점**: 2026-05-10
 > **작성 목적**: decisionlog 의 모든 결정사항을 구현 가능한 plan 으로 변환
@@ -20,7 +20,7 @@
 ### 1.1 펀드 정체성
 
 - **영문**: Adaptive VolControl Fund
-- **한글**: 어댑티브 볼컨트롤 펀드
+- **한글**: 변동성 인지 적응 펀드
 - **슬로건**: "변동성 예측 기반 적응형 자산배분 — Volatility-Aware Adaptive Allocation"
 - **핵심 메커니즘**: Black-Litterman (BL) + LSTM 변동성 예측 + 4-slot config 검증
 - **선정 config**: `mat_eq_eq_raw_pap` (prior=capm_eq / p_weight=eq / q_mode=raw_lam / **omega_mode=ff3_paper**, 2026-05-11 4차 최종 변경 — 사용자 결정으로 1차 모델로 회귀)

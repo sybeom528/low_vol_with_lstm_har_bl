@@ -187,6 +187,80 @@
   - Cont 2001, Hill 1975, Embrechts 1997 등 학술 표준 인용으로 근거 명시
   - 실무 패턴 (월별 NAV + 일별 risk) 으로 narrative 정당화
 
+### B-2 펀드 한글명 변경 ("어댑티브 볼컨트롤" → "변동성 인지 적응") + 용어 정합화
+- **카테고리**: Narrative / Branding
+- **배경**:
+  - About 페이지 본문 구현 중 사용자가 음역 표현 ("어댑티브 볼컨트롤") 이 한국어 사용자에게 어색하다는 피드백 제기
+  - 추가로 "운용 우주" 표현도 어색하다는 피드백 (`pages/09_About.py:63`)
+- **결정 (사용자 결정 2026-05-12)**:
+  - **펀드 한글명**: ~~어댑티브 볼컨트롤 펀드~~ → **변동성 인지 적응 펀드**
+    - Dashboard 의 기존 키워드 (Overview 차별화 카드의 "변동성 인지 자산배분") 와 정합
+    - 길이도 11자 → 10자로 압축
+  - **영문 표기 유지**: `Adaptive Volatility Control Fund` (학술 / 영문 일관성)
+  - **"운용 우주"**: → **투자 대상 종목군** (가장 직관적, 일반 투자자 친화)
+- **이전 B-2 결정 (2026-05-10) 의 음역 일관성 근거는 사후 정정 박스로 역사적 사실 보존**:
+  - `decisionlog/01_meta_A_B_C.md` B-2 결정 박스에 inline 정정 마커 추가 (~~취소선~~ → [정정 2026-05-12: ...] 패턴)
+- **변경 내역**:
+  - **사용자 노출 영역 (3 파일)**:
+    - `app.py:91`: title_ko 변경
+    - `lib/page_helpers.py:119`: 사이드바 markdown 변경
+    - `pages/09_About.py:60, 63`: 펀드명 + 운용 우주 변경
+  - **docs 영역 (6 파일)**:
+    - `docs/decisionlog/01_meta_A_B_C.md`: B-2 결정 박스 사후 정정 (역사적 사실 보존)
+    - `docs/plan/00_README.md`, `docs/plan/02_common.md`, `docs/plan/03_pages/01_overview.md` (plan 3개): 와이어프레임 예시 일괄 치환
+    - `docs/decisionlog/02_overview.md`, `docs/decisionlog/10_sidebar.md` (decisionlog 2개): 와이어프레임 예시 일괄 치환
+- **검증**:
+  - 잔존 "어댑티브 볼컨트롤" / "운용 우주" 검색 결과: 모두 `01_meta_A_B_C.md` 의 **사후 정정 박스 안 의도적 보존** (취소선 + 정정 마커 패턴)
+  - 사용자 노출 영역 / 다른 docs 모두 정정 완료
+- **영향 범위**:
+  - 사용자 노출 영역 = 펀드 한글명 표시 4 위치 + 운용 우주 표현 1 위치 (전체 dashboard 일관)
+  - docs 영역 = 와이어프레임 예시 + B-2 결정 자체
+  - 펀드 메트릭 / 차트 / KPI 영향 없음 (표현 / 브랜딩 변경만)
+- **영향 파일**: `app.py`, `lib/page_helpers.py`, `pages/09_About.py`, `docs/decisionlog/01_meta_A_B_C.md`, `docs/decisionlog/02_overview.md`, `docs/decisionlog/10_sidebar.md`, `docs/plan/00_README.md`, `docs/plan/02_common.md`, `docs/plan/03_pages/01_overview.md`
+
+### About 페이지 본문 구현 + Walk-forward narrative 정합화 (Phase 4)
+- **카테고리**: Page Structure / New Feature / Narrative
+- **배경**:
+  - 본 페이지는 Phase 3 마지막에 placeholder 만 두고 (`pages/09_About.py` 25 lines), 영역별 자세한 결정은 "구현 후 팀 상의" 로 보류된 상태
+  - 본 세션 Task D+E 로 본문 구현 진행
+  - 논의 중 사용자 정정 발생: **LSTM + BL 모두 walk-forward 방식 → overfitting + look-ahead bias 원천 차단** (이전 narrative 일부는 "TEST 168m 학습 / HO 24m 검증" 패턴으로 부정확)
+- **영역 구조 변경** (plan 의 8 영역 → 본 구현의 6 영역, 사용자 결정 반영):
+  - 영역 1 (Header) + 영역 8 (Footer) 은 자동 (공통)
+  - **영역 3 펀드 소개**: 3.1 정체성 / 3.2 운용 철학 / 3.4 프로젝트 메타 (3.3 팀 정보 제외, 사용자 결정)
+  - **영역 4 FAQ**: 13개 (4 카테고리 — 펀드 일반 / 성과 / 위험 관리 / 학술 토대). Q12 (BL+LSTM 학술 근거) 사용자 결정으로 삭제 → 최종 13개
+  - **영역 5 데이터 출처**: 데이터 source 만 (학술 인용 일람 / 운영 가정 박스 삭제, 사용자 결정)
+  - **영역 6 (구 영역 7) Disclosure**: 표준 disclaimer + Risk Factor 5가지 (Backtest 일반 위험 포함)
+  - **삭제**: ~~영역 6 Selection Bias 학술 부록~~ (단일 모델 사용이므로 PBO/DSR 불필요, 사용자 결정)
+- **사용자 친화 작성 원칙**:
+  - 코드 변수명 / 학술 용어 최소화 ("portfolio weight" → "종목 비중", "monthly_panel.fwd_ret_1m" 등 제거)
+  - FAQ 13개 모두 일반 투자자 / 부트캠프 평가자가 직관적으로 이해 가능한 표현
+  - Walk-forward 방식 = "그 시점 이전 데이터만 사용" 등 한국어 설명으로 변환
+- **Walk-forward narrative 정합화 (사용자 정정 반영)**:
+  - 사용자 정정: **LSTM + BL 모두 walk-forward → overfitting + look-ahead bias 원천 차단**
+  - About 본문: Walk-forward 방식 명시 + "원천 차단" 강조
+  - Risk Factor 5 (Backtest 일반 위험): "Walk-forward 차단 성공 + 남는 일반적 backtest 한계" 로 narrative 재구성
+  - **dashboard 다른 영역 정정** (사용자 노출 narrative 정합):
+    - `lib/sector_charts.py:776`: "학습 기간 14년 (168개월)" → "TEST 168m (14년) walk-forward 운용 동안" (단순 기간 분리 의미 + walk-forward 명시)
+    - `lib/overview_charts.py:378`: "회복기 / 확장기 / 변동기 + 24m Hold Out 검증" → "... + Hold Out 24m (최근 2년) 구간" ("검증" 단어 완화)
+- **검증**:
+  - `pages/09_About.py` syntax check PASS (343 lines)
+  - 영역별 콘텐츠 정합 (FAQ 13개 / Risk Factor 5개 / 데이터 출처 표 / 표준 disclaimer)
+- **영향 범위**:
+  - 신규 페이지 본문 구현 (`pages/09_About.py` 25 → 343 lines, +318)
+  - dashboard 다른 영역 (Overview / Sector Watch) 의 walk-forward narrative 1줄씩 정정 (수치 영향 없음, 표현 정합)
+  - 다른 페이지 / 펀드 backtest 결과 / KPI 영향 없음
+- **🔄 후속 정정 (같은 날 2026-05-12)** — 추가 narrative 충돌 발견 + 사용자 결정으로 일괄 정정:
+  - **사용자 노출 영역 추가 정정**:
+    - `app.py:94-96` Sub-header description: "2010-2023년 (14년) 학습 + 2024-2025년 (미사용 2년) 검증 구조" → walk-forward 방식 명시 + TEST 168m / Hold Out 24m 명칭 사용
+    - `pages/09_About.py:144` (FAQ Q5 답변): "학습 기간 (2010-2023, 14년)" → "TEST 168m 운용 구간 (2010-2023, 14년)"
+    - `pages/09_About.py:187` (FAQ Q10 답변): "학습 기간 (2010-2023)" → "TEST 168m 운용 구간 (2010-2023)"
+  - **`docs/decisionlog/02_overview.md` 사후 정정 박스 + inline 마커** (옵션 A — 역사적 사실 보존):
+    - 파일 상단에 walk-forward narrative 사후 정정 박스 추가 (영역 1 / 영역 5 표 / 영역 6 와이어프레임 모두 안내)
+    - L215 (결정 항목 2-3 근거): `~~"TEST (학습) + HO (검증)"~~ → [정정: TEST + HO 모두 walk-forward 운용]`
+    - L776 (Differentiator 표): `~~"168m 학습 + 24m 검증"~~ → [정정: walk-forward 운용]`
+    - L1039 (Disclosure 코드 블록): 코드 블록 위 정정 마커 안내
+    - L1079 (와이어프레임): 와이어프레임 위 정정 마커 안내
+
 ### Investment Simulator 시점 입력 월말 명확화 (옵션 A — a-1 방식)
 - **카테고리**: UX / Code Structure / 학술 정직성
 - **발견 경위**:

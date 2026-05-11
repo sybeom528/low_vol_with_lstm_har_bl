@@ -55,7 +55,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Adaptive VolControl Fund                  ● Active         │
-│  어댑티브 볼컨트롤 펀드                       Benchmark: SPY  │
+│  변동성 인지 적응 펀드                       Benchmark: SPY  │
 │  변동성 예측 기반 적응형 자산배분 —             Data: 2025-12 │
 │  Volatility-Aware Adaptive Allocation                       │
 └─────────────────────────────────────────────────────────────┘
