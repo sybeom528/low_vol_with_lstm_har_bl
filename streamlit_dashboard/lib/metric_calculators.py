@@ -1174,6 +1174,46 @@ def calc_delta_weight(
     return curr - prev
 
 
+def calc_holding_period(
+    weights: pd.DataFrame, current_date: pd.Timestamp, tickers: list[str]
+) -> pd.Series:
+    """
+    최근 연속 보유 기간 (개월).
+    current_date 부터 거꾸로 가며 weight > 0 인 연속 시점 카운트.
+    중간에 weight = 0 또는 NaN 인 시점이 나오면 중단.
+
+    Args:
+        weights: 월별 weight DataFrame (index=date, columns=ticker)
+        current_date: 기준 시점 (이 시점 포함하여 거꾸로 카운트)
+        tickers: 대상 ticker 리스트
+
+    Returns:
+        pd.Series (index=tickers, value=연속 보유 개월 수)
+        - current_date 에 보유 안한 ticker = 0
+        - 첫 진입 ~ current_date 까지 연속 보유 = N (N = 진입 후 경과 개월)
+    """
+    if current_date not in weights.index:
+        return pd.Series([0] * len(tickers), index=tickers, dtype=int)
+
+    pos = weights.index.get_loc(current_date)
+    dates_reversed = weights.index[: pos + 1][::-1]  # current_date 부터 거꾸로
+
+    result = {}
+    for tk in tickers:
+        if tk not in weights.columns:
+            result[tk] = 0
+            continue
+        count = 0
+        for t in dates_reversed:
+            w = weights.loc[t, tk]
+            if pd.notna(w) and w > 0:
+                count += 1
+            else:
+                break  # 끊김 → 카운트 종료
+        result[tk] = count
+    return pd.Series(result, dtype=int)
+
+
 # ======================================================================
 # Sector Watch 페이지 전용 (Phase 2.3)
 # ======================================================================
@@ -1441,8 +1481,14 @@ def calc_sub_event_metrics(ret: pd.Series, spy: pd.Series, rf: pd.Series) -> pd.
     return pd.DataFrame(rows)
 
 
-def calc_avg_recovery_time(sub_event_df: pd.DataFrame) -> float:
-    """4 Sub-events 의 평균 Recovery Time (개월). NaN 제외."""
+def calc_avg_recovery_from_subevents(sub_event_df: pd.DataFrame) -> float:
+    """
+    4 Sub-events DataFrame 의 평균 Recovery Time (개월). NaN 제외.
+
+    Backtesting 페이지 영역 6 sub-events 용.
+    Risk Metrics 페이지의 'Series 기반' 평균 recovery 와 분리
+      → calc_avg_recovery_time (Series) vs calc_avg_recovery_from_subevents (DataFrame).
+    """
     if "Recovery_months" not in sub_event_df.columns:
         return np.nan
     rec = sub_event_df["Recovery_months"].dropna()

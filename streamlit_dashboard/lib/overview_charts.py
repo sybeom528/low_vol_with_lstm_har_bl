@@ -19,9 +19,82 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from lib import metric_calculators as mc
-from lib.colors import BENCHMARK_COLORS, COLORS
+from lib.colors import BENCHMARK_COLORS, COLORS, SANKEY_GROUP_COLORS
 from lib.data_loader import EVAL_PERIODS, HO_START, TEST_END, filter_period
 from lib.plot_helpers import add_event_annotations, add_regime_backgrounds
+
+
+# ======================================================================
+# Methodology Overview Sankey (이전: lib/methodology_charts.py)
+# 영역 5 (페이지 둘러보기) 하위에 표시 — BL+LSTM 흐름 시각화
+# ======================================================================
+
+# Sankey 9 노드 — 4 그룹 (변경 용이)
+SANKEY_NODES = [
+    # 그룹 1: 데이터
+    {"label": "Market Data", "group": "data"},
+    {"label": "Returns Data", "group": "data"},
+    {"label": "Sector / Mcap", "group": "data"},
+    # 그룹 2: BL prior
+    {"label": "BL Prior\n(CAPM equilibrium)", "group": "bl"},
+    # 그룹 3: LSTM
+    {"label": "LSTM Vol\nPredict", "group": "lstm"},
+    {"label": "View / Confidence\n(P, Q, Ω)", "group": "lstm"},
+    # 그룹 4: BL posterior + Optimizer
+    {"label": "BL Posterior\nE[R]", "group": "bl"},
+    {"label": "Optimizer\n(4-slot config)", "group": "optimizer"},
+    {"label": "Portfolio Weights", "group": "optimizer"},
+]
+
+# Sankey 링크 (source → target) — 흐름
+SANKEY_LINKS = [
+    (0, 3),   # Market Data → BL Prior
+    (1, 3),   # Returns → BL Prior
+    (2, 3),   # Sector → BL Prior
+    (1, 4),   # Returns → LSTM
+    (4, 5),   # LSTM → View/Confidence
+    (3, 6),   # BL Prior → BL Posterior
+    (5, 6),   # View → BL Posterior
+    (6, 7),   # BL Posterior → Optimizer
+    (7, 8),   # Optimizer → Weights
+]
+
+
+def render_methodology_sankey() -> None:
+    """Methodology 전체 흐름 Sankey 다이어그램 — 9 노드 4 그룹."""
+    node_labels = [n["label"] for n in SANKEY_NODES]
+    node_colors = [SANKEY_GROUP_COLORS.get(n["group"], COLORS["text_muted"]) for n in SANKEY_NODES]
+
+    fig = go.Figure(go.Sankey(
+        node=dict(
+            pad=20, thickness=20, line=dict(color="black", width=0.5),
+            label=node_labels, color=node_colors,
+        ),
+        link=dict(
+            source=[s for s, _ in SANKEY_LINKS],
+            target=[t for _, t in SANKEY_LINKS],
+            value=[1] * len(SANKEY_LINKS),
+            color="rgba(156, 163, 175, 0.3)",
+        ),
+    ))
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor=COLORS["background"], plot_bgcolor=COLORS["background"],
+        font_color=COLORS["text"], height=420,
+        margin=dict(t=10, l=10, r=10, b=10),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 4 그룹 색상 범례
+    st.markdown(
+        f'<div style="display:flex;gap:16px;font-size:12px;color:{COLORS["text_muted"]};margin-top:6px;">'
+        f'<span><span style="display:inline-block;width:10px;height:10px;background:{SANKEY_GROUP_COLORS["data"]};margin-right:4px;"></span>데이터</span>'
+        f'<span><span style="display:inline-block;width:10px;height:10px;background:{SANKEY_GROUP_COLORS["bl"]};margin-right:4px;"></span>Black-Litterman</span>'
+        f'<span><span style="display:inline-block;width:10px;height:10px;background:{SANKEY_GROUP_COLORS["lstm"]};margin-right:4px;"></span>LSTM</span>'
+        f'<span><span style="display:inline-block;width:10px;height:10px;background:{SANKEY_GROUP_COLORS["optimizer"]};margin-right:4px;"></span>Optimizer</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ======================================================================
@@ -140,34 +213,15 @@ def render_hero_kpi(
             test_str = fmt_fn(test_v, plus) if fmt == "pct" else fmt_fn(test_v)
             ho_str = fmt_fn(ho_v, plus) if fmt == "pct" else fmt_fn(ho_v)
 
-            # tooltip 텍스트 (메트릭 정의)
-            tip = get_tooltip(label) or ""
-            tip_html = (
-                f'<span title="{tip}" style="cursor:help;color:#9CA3AF;font-size:11px;'
-                f'margin-left:6px;border:1px solid #374151;border-radius:50%;'
-                f'width:14px;height:14px;display:inline-flex;align-items:center;'
-                f'justify-content:center;">ⓘ</span>'
-                if tip else ""
+            # st.metric — TEST 가 메인, HO 는 caption (Holdings/Performance 동일 패턴)
+            st.metric(
+                label=label,
+                value=test_str,
+                delta="TEST 168m",
+                delta_color="off",
+                help=get_tooltip(label) or label,
             )
-
-            # 단순 카드 — 큰 숫자 강조 + TEST / HO 두 줄 (sparkline 제거) + tooltip
-            st.markdown(
-                f'<div style="border-left:3px solid {COLORS["primary"]};'
-                f'padding:8px 0 8px 12px;margin-bottom:4px;">'
-                f'<div style="font-size:13px;color:#9CA3AF;font-weight:600;">'
-                f'{label}{tip_html}'
-                f'</div>'
-                f'<div style="font-size:24px;color:#FAFAFA;font-weight:700;margin-top:4px;">'
-                f'{test_str}'
-                f'</div>'
-                f'<div style="font-size:11px;color:#9CA3AF;margin-top:2px;">TEST</div>'
-                f'<div style="font-size:14px;color:{COLORS["accent_red"]};font-weight:600;margin-top:8px;">'
-                f'{ho_str}'
-                f'</div>'
-                f'<div style="font-size:11px;color:#9CA3AF;">HOLD_OUT</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+            st.caption(f"Hold Out 24m: **{ho_str}**")
 
 
 # ======================================================================
@@ -314,25 +368,25 @@ _DIFFERENTIATOR_CARDS = [
         "value_template": "Volatility (HO): {ho_vol}",
         "metric_key": "vol_ho",
         "citation": "Hochreiter & Schmidhuber (1997)",
-        "page": "pages/07_Methodology.py",
+        "page": "pages/04_Risk_Metrics.py",
         "color": COLORS["primary"],
     },
     {
         "icon": "✅",
         "title_en": "Validated Across Market Regimes",
         "title_ko": "시장 국면별 검증 완료",
-        "body": "회복기 / 확장기 / 변동기 + 24m HOLD_OUT 검증",
+        "body": "회복기 / 확장기 / 변동기 + 24m Hold Out 검증",
         "value_template": "Sortino (TEST): {sortino}",
         "metric_key": "sortino",
         "citation": "Walk-forward (is=1250d / oos=21d / embargo=63d)",
-        "page": "pages/08_Backtesting.py",
+        "page": "pages/04_Risk_Metrics.py",
         "color": COLORS["accent_green"],
     },
     {
         "icon": "💎",
         "title_en": "Net of Conservative Costs",
         "title_ko": "거래비용 차감 후 양호",
-        "body": "20bp One-way 거래비용 차감 후에도 양호한 위험조정 수익",
+        "body": "편측 20bp (1회 거래당 0.20%) 거래비용 차감 후에도 양호한 위험조정 수익",
         "value_template": "Net CAGR (TEST): {net_cagr}",
         "metric_key": "net_cagr",
         "citation": "Frazzini, Israel & Moskowitz (2018)",
@@ -360,7 +414,11 @@ def _calc_card_values(ret: pd.Series, rf: pd.Series | None = None) -> dict[str, 
 
 def render_differentiator_cards(ret: pd.Series, rf: pd.Series | None = None) -> None:
     """
-    영역 4: 3 핵심 강점 카드 (Methodology / Backtesting / Performance 로 navigation).
+    영역 4: 3 핵심 강점 카드 (Risk Metrics / Risk Metrics / Performance 로 navigation).
+
+    통합 이력 (2026-05-11):
+      - Card 1 (Volatility-Aware): Methodology 페이지 삭제 → Risk Metrics 로
+      - Card 2 (Regime Validated):  Backtesting 페이지 삭제 → Risk Metrics 로
 
     Args:
         rf: 무위험 수익률 시리즈. None 이면 0 (final 정합 X).
@@ -401,39 +459,38 @@ def render_differentiator_cards(ret: pd.Series, rf: pd.Series | None = None) -> 
 
 _NAVIGATION_CARDS = [
     {"icon": "📈", "label_en": "Performance",         "label_ko": "성과 분석",     "desc": "액티브 운용 + 다중 벤치마크",   "page": "pages/03_Performance.py"},
-    {"icon": "⚠️", "label_en": "Risk Metrics",        "label_ko": "위험 지표",     "desc": "위험 통제 + Tail Risk (Hill)", "page": "pages/04_Risk_Metrics.py"},
+    {"icon": "⚠️", "label_en": "Risk Metrics",        "label_ko": "위험 지표",     "desc": "위험 + Regime + Sub-events",   "page": "pages/04_Risk_Metrics.py"},
     {"icon": "🏢", "label_en": "Holdings",            "label_ko": "보유 종목",     "desc": "종목 detail + 기여도 분석",    "page": "pages/05_Holdings.py"},
     {"icon": "🌐", "label_en": "Sector Watch",        "label_ko": "섹터 분석",     "desc": "섹터 분산 + HO 정당화",        "page": "pages/06_Sector_Watch.py"},
-    {"icon": "🧪", "label_en": "Methodology",         "label_ko": "방법론",        "desc": "BL + LSTM walk-forward",       "page": "pages/07_Methodology.py"},
-    {"icon": "✅", "label_en": "Backtesting",         "label_ko": "검증",          "desc": "Regime / Sub-events 검증",     "page": "pages/08_Backtesting.py"},
     {"icon": "ℹ️", "label_en": "About / FAQ",         "label_ko": "소개 / FAQ",    "desc": "프로젝트 소개 / 자주 묻는 질문", "page": "pages/09_About.py"},
 ]
 
 
 def render_navigation_cards() -> None:
     """
-    영역 5: 7 페이지 navigation 카드 그리드 (4 + 3 분할).
+    영역 5: 5 페이지 navigation 카드 그리드.
     Investment Simulator 는 영역 4 와 흐름이 달라 제외 (사이드바 체험 그룹에서 접근).
+    통합 이력 (2026-05-11):
+      - Methodology 페이지 → Overview 영역 6 (Sankey)
+      - Backtesting 페이지 → Risk Metrics 영역 5/6 (Regime / Sub-events)
     """
-    # 4 + 3 분할
-    rows = [_NAVIGATION_CARDS[:4], _NAVIGATION_CARDS[4:]]
-    for row_cards in rows:
-        cols = st.columns(len(row_cards))
-        for col, nav in zip(cols, row_cards):
-            with col:
-                card_html = (
-                    f'<div style="border:1px solid #374151;border-radius:6px;'
-                    f'padding:14px;margin-bottom:8px;background-color:#1F2937;min-height:130px;">'
-                    f'<div style="font-size:24px;">{nav["icon"]}</div>'
-                    f'<div style="font-weight:bold;font-size:14px;margin:6px 0 2px 0;color:#FAFAFA;">{nav["label_en"]}</div>'
-                    f'<div style="font-size:11px;color:#9CA3AF;margin-bottom:8px;">{nav["label_ko"]}</div>'
-                    f'<div style="font-size:11px;color:#9CA3AF;line-height:1.4;">{nav["desc"]}</div>'
-                    f"</div>"
-                )
-                st.markdown(card_html, unsafe_allow_html=True)
-                if st.button(
-                    f"열기 →",
-                    key=f"nav_{nav['label_en']}",
-                    use_container_width=True,
-                ):
-                    st.switch_page(nav["page"])
+    # 단일 행 (5 카드)
+    cols = st.columns(5)
+    for col, nav in zip(cols, _NAVIGATION_CARDS):
+        with col:
+            card_html = (
+                f'<div style="border:1px solid #374151;border-radius:6px;'
+                f'padding:14px;margin-bottom:8px;background-color:#1F2937;min-height:130px;">'
+                f'<div style="font-size:24px;">{nav["icon"]}</div>'
+                f'<div style="font-weight:bold;font-size:14px;margin:6px 0 2px 0;color:#FAFAFA;">{nav["label_en"]}</div>'
+                f'<div style="font-size:11px;color:#9CA3AF;margin-bottom:8px;">{nav["label_ko"]}</div>'
+                f'<div style="font-size:11px;color:#9CA3AF;line-height:1.4;">{nav["desc"]}</div>'
+                f"</div>"
+            )
+            st.markdown(card_html, unsafe_allow_html=True)
+            if st.button(
+                f"열기 →",
+                key=f"nav_{nav['label_en']}",
+                use_container_width=True,
+            ):
+                st.switch_page(nav["page"])

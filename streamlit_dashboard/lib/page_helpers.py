@@ -18,6 +18,18 @@ html, body, [class*="css"] {
     font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic",
                  -apple-system, BlinkMacSystemFont, sans-serif !important;
 }
+
+/* === st.metric KPI 라벨 폰트 확대 (2026-05-11) ===
+   - 기본 라벨 ~14px → 17px (가독성 향상)
+   - 두 selector 병기: Streamlit 버전 호환성 */
+[data-testid="stMetricLabel"] > div {
+    font-size: 17px !important;
+    font-weight: 600 !important;
+}
+[data-testid="stMetricLabel"] p {
+    font-size: 17px !important;
+    font-weight: 600 !important;
+}
 </style>
 """
 
@@ -38,17 +50,13 @@ def render_page_header(page_name_en: str, page_name_ko: str) -> None:
         page_name_en: 영문 페이지명 (예: "Performance")
         page_name_ko: 한글 페이지명 (예: "성과 분석")
 
-    좌측 = 페이지명 (영/한 병기, A-3 결정)
-    우측 = 펀드 메타 (Active 표시 / 벤치마크 / 데이터 시점)
+    페이지명 (영/한 병기, A-3 결정).
+    우측 펀드 메타 (Active 표시 / 벤치마크 / 데이터 시점) 는 2026-05-11 제거됨:
+      - Sub-header / Footer 와 정보 중복
+      - 우상단 공간 활용도 낮음
     """
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.title(page_name_en)
-        st.caption(page_name_ko)
-    with col2:
-        st.markdown("● **Active (Simulated)**")
-        st.caption("Benchmark: S&P 500 (SPY)")
-        st.caption("Data as of: 2025-12-31")
+    st.title(page_name_en)
+    st.caption(page_name_ko)
 
 
 def render_subheader(title_en: str, title_ko: str, description: str) -> None:
@@ -109,7 +117,7 @@ def render_sidebar() -> None:
         # ── 펀드명 + 메타 (C4-3) ──
         st.markdown("# Adaptive VolControl Fund")
         st.markdown("어댑티브 볼컨트롤 펀드")
-        st.caption("Benchmark: SPY  |  Data: 2025-12")
+        st.caption("Benchmark: SPY  |  Data: 2010-01 ~ 2025-12")
         st.divider()
 
         # ── 6 그룹 페이지 navigation (C4-1 c, C4-2 a) ──
@@ -131,29 +139,83 @@ def render_sidebar() -> None:
         st.page_link("pages/05_Holdings.py", label="Holdings", icon="🏢")
         st.page_link("pages/06_Sector_Watch.py", label="Sector Watch", icon="🌐")
 
-        # 그룹 5: 검증
-        st.markdown("##### ── 검증 ──")
-        st.page_link("pages/07_Methodology.py", label="Methodology", icon="🧪")
-        st.page_link("pages/08_Backtesting.py", label="Backtesting", icon="✅")
-
-        # 그룹 6: 메타
+        # 그룹 5: 메타
+        # 주의 (2026-05-11):
+        #   - Methodology 페이지 통합 삭제 → BL+LSTM Sankey 는 Overview 영역 6.
+        #   - Backtesting 페이지 통합 삭제 → Regime 메트릭 + Sub-events 4위기 는
+        #     Risk Metrics 페이지 영역 5/6 으로 이전.
         st.markdown("##### ── 메타 ──")
         st.page_link("pages/09_About.py", label="About / FAQ", icon="ℹ️")
 
         st.divider()
 
+        # ── 토글 widget — 페이지 이동 시에도 상태 보존 ─────────────────
+        # 문제 (Streamlit multipage 이슈, 2026-05-11):
+        #   - widget key 와 session_state key 가 동일하면 페이지 이동 시
+        #     widget 이 unmount 되었다가 re-mount 될 때 internal state 가
+        #     default 로 reset → session_state 도 함께 reset.
+        # 해결 (source-of-truth 패턴):
+        #   - Source key: "period" / "show_spy" / "show_ew" / "show_ivw"
+        #     (다른 페이지 코드는 이 key 를 read 함, init_session_state 보장)
+        #   - Widget key: "_sidebar_<name>" (페이지 진입 시 재 mount 대비)
+        #   - 페이지 진입 시: source → widget key 복원
+        #   - Widget 변경 시: on_change callback 으로 source 업데이트
+        # ────────────────────────────────────────────────────────────
+
+        # 페이지 진입 시 widget key 를 source value 로 복원
+        st.session_state["_sidebar_period"] = st.session_state.period
+        st.session_state["_sidebar_show_spy"] = st.session_state.show_spy
+        st.session_state["_sidebar_show_ew"] = st.session_state.show_ew
+        st.session_state["_sidebar_show_ivw"] = st.session_state.show_ivw
+
         # ── 토글 1: 기간 (Period) — C4-4 ──
         st.subheader("📅 기간 (Period)")
         st.radio(
             "기간 선택",
-            options=["FULL", "TEST", "HO"],
-            index=["FULL", "TEST", "HO"].index(st.session_state.get("period", "FULL")),
-            key="period",
+            options=["TEST", "HO", "FULL"],
+            format_func=lambda x: "Hold Out" if x == "HO" else x,
+            key="_sidebar_period",
+            on_change=_sync_period_to_source,
             label_visibility="collapsed",
         )
 
         # ── 토글 2: 비교 벤치마크 — C4-4 ──
+        # 라벨: 직관적 한글 (내부 식별자 EW/IVW 는 caption / tooltip 에서만 유지).
         st.subheader("📊 비교 (Benchmark)")
-        st.checkbox("SPY", value=st.session_state.get("show_spy", True), key="show_spy")
-        st.checkbox("EW (펀드 universe)", value=st.session_state.get("show_ew", False), key="show_ew")
-        st.checkbox("IVW (Naive Low-vol)", value=st.session_state.get("show_ivw", False), key="show_ivw")
+        st.checkbox(
+            "SPY (S&P 500 ETF)",
+            key="_sidebar_show_spy",
+            on_change=_sync_show_spy_to_source,
+            help="시장 대표 벤치마크 — S&P 500 추종 ETF",
+        )
+        st.checkbox(
+            "균등가중",
+            key="_sidebar_show_ew",
+            on_change=_sync_show_ew_to_source,
+            help="펀드 universe (S&P 500 종목) 의 모든 종목을 동일 비중으로 보유한 가상 포트폴리오 (Equal-Weight, EW)",
+        )
+        st.checkbox(
+            "역변동성 가중",
+            key="_sidebar_show_ivw",
+            on_change=_sync_show_ivw_to_source,
+            help="변동성이 낮은 종목일수록 큰 비중을 주는 가상 포트폴리오 (Inverse Volatility Weight, IVW) — Low-Volatility Anomaly 활용",
+        )
+
+
+# === 사이드바 widget → source-of-truth sync callbacks =================
+# (render_sidebar 위에 정의해도 되지만, helper 함수와 명확히 분리하기 위해
+#  파일 하단에 배치. 단방향 sync: widget value → source key)
+def _sync_period_to_source() -> None:
+    st.session_state.period = st.session_state._sidebar_period
+
+
+def _sync_show_spy_to_source() -> None:
+    st.session_state.show_spy = st.session_state._sidebar_show_spy
+
+
+def _sync_show_ew_to_source() -> None:
+    st.session_state.show_ew = st.session_state._sidebar_show_ew
+
+
+def _sync_show_ivw_to_source() -> None:
+    st.session_state.show_ivw = st.session_state._sidebar_show_ivw

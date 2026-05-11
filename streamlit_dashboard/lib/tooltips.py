@@ -13,7 +13,7 @@ METRIC_TOOLTIPS = {
     # ── Pool-1 수익성 ─────────────────────────────────────────────
     "Cumulative Return": "누적 수익률 — 시작 시점부터 현재까지의 총 수익.",
     "CAGR": "연환산 복리 수익률 (Compound Annual Growth Rate). 기하평균 기반.",
-    "Net CAGR": "거래비용 차감 후 연환산 수익률 (One-way 20bp 적용, Frazzini et al. 2018).",
+    "Net CAGR": "거래비용 차감 후 연환산 수익률 (편측 20bp = 1회 거래당 0.20% 적용).",
     "Arithmetic Mean": "산술 평균 수익률 (월별 → 연환산).",
 
     # ── Pool-2 위험조정 수익 ───────────────────────────────────────

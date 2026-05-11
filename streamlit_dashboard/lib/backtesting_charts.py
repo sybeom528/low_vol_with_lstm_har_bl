@@ -117,7 +117,7 @@ def render_backtest_kpi(
     ret: pd.Series,
     spy: pd.Series,
     rf: pd.Series,
-    current_config: str = "mat_eq_mcap_raw_he",
+    current_config: str = "mat_eq_eq_raw_pap",
 ) -> None:
     """
     5 KPI: TEST/HO Gap / Sensitivity Robustness / 4-slot Robust /
@@ -146,7 +146,7 @@ def render_backtest_kpi(
 
     # 4. Avg Recovery Time (Sub-events)
     sub_df = mc.calc_sub_event_metrics(ret, spy, rf)
-    avg_recovery = mc.calc_avg_recovery_time(sub_df)
+    avg_recovery = mc.calc_avg_recovery_from_subevents(sub_df)
 
     # 5. Regime 일관성 Score
     regime_consistency = mc.calc_regime_consistency_score(ret, rf)
@@ -236,7 +236,7 @@ def _compute_all_config_cumulative(start: str = "2010-01-31") -> pd.DataFrame:
 def render_cumulative_comparison(
     fund_ret: pd.Series,
     fund_spy: pd.Series,
-    current_config: str = "mat_eq_mcap_raw_he",
+    current_config: str = "mat_eq_eq_raw_pap",
 ) -> None:
     """
     156 config 의 누적 수익률 비교 — spaghetti / percentile 토글.
@@ -459,8 +459,6 @@ def render_sub_events(
             v = df.loc[worst_idx, "Active"]
             star = " ★" if "2024" in ev else ""
             st.error(f"🔴 **Worst**: {ev}{star} (Active {v:+.2%})")
-            if star:
-                st.caption("→ HO 정당화 narrative 핵심 (Sector Watch 영역 8 참조)")
 
     # Active Return 막대 (위기별)
     fig = go.Figure(go.Bar(
@@ -489,7 +487,7 @@ def render_sub_events(
 # 영역 6: Sensitivity Test (Top 10 + 신모델 강조)
 # ======================================================================
 
-def render_sensitivity_test(current_config: str = "mat_eq_mcap_raw_he") -> None:
+def render_sensitivity_test(current_config: str = "mat_eq_eq_raw_pap") -> None:
     """Top 10 config 표 + 신모델 강조 + Top 1-10 차이 막대."""
     df = _compute_all_config_metrics()
     if len(df) == 0:
@@ -552,7 +550,7 @@ def render_sensitivity_test(current_config: str = "mat_eq_mcap_raw_he") -> None:
         sortino_val = df.loc[current_config, "Sortino"]
         top_diff = df_sorted["Sortino"].iloc[0] - df_sorted["Sortino"].iloc[-1]
         st.info(
-            f"🎯 **신모델 mat_eq_mcap_raw_he** Sortino **{sortino_val:.3f}** "
+            f"🎯 **신모델 mat_eq_eq_raw_pap** Sortino **{sortino_val:.3f}** "
             f"= Rank **{rank} / {len(df)}** (상위 {(1 - (rank-1)/(len(df)-1))*100:.1f}%). "
             f"Top {top_n} 의 Sortino 차이 = **{top_diff:.3f}** → "
             f"**{'4-slot 변경에도 결과 안정 (robust)' if top_diff < 0.10 else '일부 모델 차이 큼 — Top 1 의존성'}**."

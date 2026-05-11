@@ -15,9 +15,7 @@ import streamlit as st
 # === 표준 Footer 텍스트 (E-3 + I-2) ===================================
 FOOTER_DISCLOSURE = """
 ※ 본 결과는 백테스트 시뮬레이션이며 실제 운용 성과를 보장하지 않습니다.
-   데이터 기간: 2010-01 ~ 2025-12 (TEST 평가 168m + HOLD_OUT 24m)
-※ HOLD_OUT 24m (2024-2025) 구간에서 SPY 대비 부진은 Backtesting 페이지 참조
-   자세한 Disclosure / Risk factors: About 페이지 참조
+   데이터 기간: 2010-01 ~ 2025-12 (TEST 평가 168m + Hold Out 24m)
 """
 
 
@@ -30,8 +28,9 @@ SIMULATOR_DISCLAIMER = """
 
 
 # === HO 라벨 통일 (E-1) ================================================
-# 모든 페이지에서 HOLD_OUT 구간 표기를 동일하게 유지
-HO_LABEL = "HOLD_OUT 24m (2024-2025)"
+# 모든 페이지에서 Hold Out 구간 표기를 동일하게 유지 (사용자 표시용)
+# 내부 EVAL_PERIODS dict key 는 여전히 "HOLD_OUT" (호환성 보존)
+HO_LABEL = "Hold Out 24m (2024-2025)"
 
 
 # === Session state 초기화 ==============================================
@@ -43,7 +42,7 @@ def init_session_state() -> None:
     app.py 진입 시 1회 호출. 이미 값이 있으면 덮어쓰지 않음.
     """
     if "period" not in st.session_state:
-        st.session_state.period = "FULL"
+        st.session_state.period = "TEST"
     if "show_spy" not in st.session_state:
         st.session_state.show_spy = True
     if "show_ew" not in st.session_state:
@@ -77,10 +76,9 @@ def render_footer() -> None:
     with col3:
         st.caption("**Meta**")
         st.caption(
-            "- Last updated: 2026-05-10\n"
-            "- Built with: Streamlit + Plotly\n"
+            "- Last updated: 2026-05-12\n"
             "- Adaptive VolControl Fund (가상 펀드)\n"
-            "- 학술 / 경진대회 목적"
+            "- 부트캠프 최종 프로젝트"
         )
 
 
