@@ -1,9 +1,45 @@
-# C-1-7. Backtesting 페이지
+# C-1-7. Backtesting 페이지 (DEPRECATED)
 
 > **파일**: `08_backtesting.md`
 > **결정 시점**: 2026-05-10
-> **상태**: 확정 (페이지 메타 BT M-1~M-4 + 영역 1~7, ★ 균형 옵션 (B) 적용 + Stress Test 제거)
+> **상태**: 🚨 **페이지 통합 삭제 — 2026-05-11** (Reference 보존)
 > **포함**: 페이지 메타 결정 / 균형 옵션 (B) narrative (9 → 8 영역 재정의) / Stress Test 제거 narrative (8 → 7) / Sub-header / Backtest Summary KPI 5개 / Regime 메트릭 자세한 비교 / Sub-events 분석 (단기 위기) / Sensitivity Test (단순 — D3-a) / 영역 7 (Stress Test) — 제거
+
+---
+
+> ## 🚨 페이지 통합 이력 — 2026-05-11
+>
+> **본 페이지는 통합 삭제되었습니다.** 본 의사결정 로그는 학술적/구현 이력 보존 목적으로 reference 용으로 유지됩니다.
+>
+> ### 이관 내역
+>
+> | 원본 영역 | 처리 |
+> |---|---|
+> | 영역 3: Backtest Summary KPI 5 | ❌ Deprecated (TEST/HO Gap 등 — 사용 안됨) |
+> | 영역 4: 156 config 누적 수익률 비교 | ❌ Deprecated |
+> | 영역 5: **Regime 메트릭 자세한 비교** | ✅ **Risk Metrics 페이지 영역 5 로 이전** (`lib/backtesting_charts.py:render_regime_detail_table` import 유지) |
+> | 영역 6: **Sub-events 분석 — 4 위기** | ✅ **Risk Metrics 페이지 영역 6 으로 이전** (`lib/backtesting_charts.py:render_sub_events` import 유지) |
+> | 영역 7: Sensitivity Test (156 config) | ❌ Deprecated |
+>
+> ### 통합 사유
+>
+> Backtesting 페이지의 **학술 검증 narrative 2개 (Regime / Sub-events)** 가 Risk Metrics 페이지의 자연스러운 흐름 (Drawdown → Regime → Sub-events → VaR/CVaR) 과 더 일치. 페이지 수 단순화 + Robustness 메트릭 (TEST/HO Gap, 156 config 비교) 은 학술적 가치는 있으나 가상 투자자 친화 목적에 부합도 낮음 → 의도적 제외.
+>
+> ### 관련 코드 변경
+>
+> - **삭제**: `pages/08_Backtesting.py`
+> - **보존**: `lib/backtesting_charts.py` — 이전된 두 함수 (`render_regime_detail_table`, `render_sub_events`) 만 사용됨, 나머지 함수 (`render_backtest_kpi`, `render_cumulative_comparison`, `render_sensitivity_test`) 는 미사용 (deprecated, 향후 cleanup 가능)
+> - **Risk Metrics**: 9 영역 → 11 영역 (영역 5/6 신규 추가)
+> - **사이드바**: `lib/page_helpers.py` 의 "검증" 그룹 → "메타" 그룹만 남음 (Methodology 와 동시 통합)
+> - **Overview Navigation Cards**: 6 → 5 카드
+> - **Overview Differentiator Cards**: Card 2 (Regime Validated) navigation → `08_Backtesting.py` → `04_Risk_Metrics.py`
+> - **Footer Disclosure**: "Backtesting 페이지 참조" → "Risk Metrics (Regime / Sub-events) 참조"
+>
+> ### 향후 재도입 가능성
+>
+> 156 config sensitivity / TEST-HO Gap 같은 학술 robustness 메트릭이 다시 필요하면:
+> - 옵션 A: Risk Metrics 페이지 영역 9 (종합 표) 에 추가
+> - 옵션 B: About / FAQ 페이지의 expander 안에 학술 부록으로
 
 ---
 

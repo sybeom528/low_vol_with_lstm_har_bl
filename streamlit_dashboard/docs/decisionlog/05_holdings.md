@@ -1,9 +1,110 @@
 # C-1-4. Holdings 페이지
 
 > **파일**: `05_holdings.md`
-> **결정 시점**: 2026-05-10
-> **상태**: 확정 (페이지 메타 Hold M-1~M-4 + 영역 1~9)
-> **포함**: 페이지 메타 결정 / Sub-header / Holdings Summary KPI 6개 / Top N Holdings 표 + 비중 / 시가총액 분포 (Bubble / Treemap) / 보유 종목 변천사 / 종목별 기여도 분석 (Performance Attribution)
+> **결정 시점**: 2026-05-10 / **2026-05-12 영역 4 시점 슬라이더 추가**
+> **상태**: 확정 + UX 보강
+> **포함**: 페이지 메타 결정 / Sub-header / Holdings Summary KPI 6개 / **Top N Holdings 표 + 시점 슬라이더 (2026-05-12)** / 시가총액 분포 (Bubble / Treemap) / 보유 종목 변천사 / 종목별 기여도 분석 (Performance Attribution)
+
+---
+
+> ## 🔄 영역 4 (Top N Holdings 표) — 시점 슬라이더 추가 (2026-05-12)
+>
+> ### 변경 내역
+>
+> **Before**: Latest snapshot 만 고정 표시 (`weights.index.max()`)
+> **After**: 시점 슬라이더로 임의 월 선택 가능, **기본값 = Latest**
+>
+> ### 변경 사유
+>
+> 1. **다른 영역과 일관성** — 영역 5 (시가총액 분포) 가 이미 시점 슬라이더로 동작 중. 영역 4 만 Latest 고정은 외톨이.
+> 2. **영역 7 (Top N 변천) 과 연계 학습** — 시계열 변천 차트에서 흥미로운 시점 발견 시 → 영역 4 슬라이더로 그 시점의 세부 표 (회사명, 시가총액, 12m 수익률 등) 확인 가능.
+> 3. **펀드 narrative 강화** — "2020-03 COVID 시점의 Top 10 / 2024-12 Hold Out 시작 시점 / 2010-01 초기" 등 흥미로운 시점 자유 탐색.
+>
+> ### 코드 영향
+>
+> - `render_top_n_table` 시그니처에 `snapshot_date: pd.Timestamp | None = None` 추가 (default = None → Latest, 하위 호환)
+> - 함수 내부 `latest_date = weights.index.max()` → `target_date = snapshot_date if snapshot_date is not None else weights.index.max()`
+> - 데이터 산출 (mcap / 12m 수익률 / ΔWeight) 모두 target_date 기준으로 변경
+> - CSV 다운로드 파일명에 target_date 반영
+> - 페이지 영역 4 에 `st.select_slider` 추가 (영역 5 와 동일 패턴, key=`holdings_top_n_date`)
+>
+> ### caption 변경
+>
+> - 제목: "Top N Holdings — Latest snapshot" → "Top N Holdings — 선택 시점 snapshot"
+> - caption: "현재 가장 많이 보유한 종목" → "선택 시점의 보유 종목 (시점 슬라이더로 원하는 월 선택 가능, 기본 = 최신 월)"
+
+---
+
+> ## 🆕 영역 4 (Top N Holdings 표) — "보유 (월)" 컬럼 추가 (2026-05-12)
+>
+> ### 변경 내역
+>
+> **신규 컬럼**: "보유 (월)" = 선택 시점부터 거꾸로 끊김 없이 연속 보유한 개월 수
+> **기존 12m Return 컬럼**: 유지하되 help tooltip 으로 의미 명확화 ("종목 자체 가격 추세 — 펀드 보유 기간 수익이 아님")
+>
+> ### 변경 사유
+>
+> 사용자 질문 — "펀드가 매월 weight 변경 (turnover 101%) 하는데 12m Return 을 보여주는 게 의미 있나? 그냥 그런 종목을 들고 있다의 의미?" 의 정확한 지적.
+>
+> 12m Return 은 종목 자체 정보일 뿐 펀드의 실제 12m 수익 기여와 무관. 펀드 narrative 보강을 위해 "보유 기간" 정보 추가.
+>
+> ### 보유 기간 정의 (최근 연속 보유)
+>
+> 선택 시점 (target_date) 부터 거꾸로 가며 `weight[t][ticker] > 0` 인 연속 시점 카운트. 중간에 0 또는 NaN 이 나오면 중단.
+>
+> | 시나리오 | 보유 (월) |
+> |---|---|
+> | 70개월 연속 보유 | 70 |
+> | 최근 3개월만 (이전엔 안 보유) | 3 |
+> | 이번 달 새로 편입 | 1 |
+> | 선택 시점에 보유 X | 0 |
+>
+> ### 펀드 narrative 활용
+>
+> 펀드의 turnover 가 월 101% 라는 점을 고려:
+> - 모든 Top 10 종목이 1-2 개월 → 매우 dynamic 한 운용 (단기 momentum 추종)
+> - 일부 종목 50+ 개월 → 핵심 holding 유지, 나머지는 회전 (core-satellite 전략)
+> - 혼합 → 적응형 비중 조정 (BL+LSTM 의 dynamic view 작동 증거)
+>
+> ### 코드 영향
+>
+> - `lib/metric_calculators.py` 에 `calc_holding_period(weights, current_date, tickers)` 함수 신규
+> - `render_top_n_table` 의 `df` 에 "보유 (월)" 컬럼 추가 + column_config 에 help tooltip
+> - 영역 4 caption 에 두 컬럼의 의미 명시 (12m Return = 종목 정보, 보유 = 펀드 정보)
+>
+> ### 컬럼 구조 변화
+>
+> Before: 8 컬럼 (Rank / Ticker / Company / Sector / Weight / Mcap / 12m / ΔW)
+> After: **9 컬럼** (+ 보유 (월))
+
+---
+
+> ## 🎨 영역 8 Attribution 라벨 + UX 통일 — 2026-05-12
+>
+> ### 변경 내역 (요약)
+>
+> 1. **영역 8 (종목별 기여도 분석) Attribution 라벨 한글화**:
+>    - "Attribution 방법" → **"기여도 계산 방식"**
+>    - "Simple (Brinson 1986)" → **"단순 합 (월별 합산)"**
+>    - "Carino Smoothed (Carino 1999)" → **"복리 보정 (장기 일치)"**
+>    - 검증 박스 narrative 한글화 (학술 출처는 help tooltip 에 보존)
+> 2. **KPI 5 (Top Weights) 라벨 명확화**:
+>    - 라벨 "Top Weights" → **"Top 10 비중"**
+>    - caption "T1: X · T5: Y" → **"Top 1: X · Top 5: Y"** (약어 전체 표기)
+>    - help tooltip 에 산식 + 균등가중 정의 + 예시 상세 추가
+> 3. **Top N Holdings 표 % 산식 정정** (Bug Fix):
+>    - `st.column_config` 의 printf format `%.Nf%%` 가 ×100 자동 처리 X
+>    - `df_display` 사본 생성 + ×100 적용 (Weight / 12m Return / ΔWeight)
+>    - CSV 다운로드는 raw 값 그대로 (계산용 일관성)
+>    - Weight 4.23% 가 0.04% 로 잘못 표시되던 버그 해결
+> 4. **caption 일괄 한글화** — Sub-header description, 영역별 caption 모두 직관적 한글로
+> 5. **"학술 정직" 표현 일괄 제거** — 영역 3 caption, 영역 8 caption 등
+>
+> ### 영향 파일
+>
+> - `lib/holdings_charts.py`, `pages/05_Holdings.py`
+>
+> **자세한 변경 일지**: `decisionlog/updatelog.md` (2026-05-11 / 2026-05-12 섹션)
 
 ---
 

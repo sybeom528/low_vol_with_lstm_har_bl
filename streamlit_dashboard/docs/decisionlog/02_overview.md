@@ -1,9 +1,59 @@
 # C-1-1. Overview 페이지
 
 > **파일**: `02_overview.md`
-> **결정 시점**: 2026-05-10
-> **상태**: 확정 (영역 1~6 모두)
-> **포함**: Header / Hero KPI / 누적수익 곡선 / 핵심 강점 카드 / Navigation Cards / Footer
+> **결정 시점**: 2026-05-10 (영역 1~6) / **2026-05-11 통합 업데이트 (영역 6 신규)**
+> **상태**: 확정 + 통합 업데이트 (영역 1~7)
+> **포함**: Header / Hero KPI / 누적수익 곡선 / 핵심 강점 카드 / Navigation Cards / **Methodology Overview Sankey (신규)** / Footer
+
+---
+
+> ## 🔄 페이지 통합 수신 이력 — 2026-05-11
+>
+> **다른 페이지에서 통합된 섹션이 추가되었습니다.**
+>
+> ### 수신 내역
+>
+> | 영역 | 추가/변경 | 원본 |
+> |---|---|---|
+> | **영역 5: Navigation Cards** | 6 → 5 카드 (Methodology / Backtesting 카드 제거 → 3+3 그리드 → 단일 행 5) | (자체 변경) |
+> | **영역 6: Methodology Overview Sankey** | 🆕 신규 영역 (BL+LSTM 9 노드 / 4 그룹 Plotly Sankey) | `decisionlog/07_methodology.md` 영역 3 |
+> | **영역 7: Footer** | 영역 번호 6 → 7 (Methodology Overview 신규 추가로 인한 shift) | (자체 변경) |
+> | **영역 4: 핵심 강점 카드** | Card 1 (Volatility-Aware) navigation: Methodology → Risk Metrics<br>Card 2 (Regime Validated) navigation: Backtesting → Risk Metrics | (자체 변경) |
+>
+> ### 통합 사유
+>
+> BL+LSTM 의 데이터 흐름 (Sankey) 은 **단일 다이어그램** 으로 충분하며, Overview 페이지의 "전체 흐름 파악" 목적에 가장 적합. 별도 Methodology 페이지 운영보다 Overview 의 마지막 영역으로 통합하는 것이 사용자 동선 효율적.
+>
+> ### 관련 의사결정 이력 (참조용)
+>
+> - `decisionlog/07_methodology.md` — 통합 전 Methodology 페이지 결정 (★ DEPRECATED)
+> - `decisionlog/08_backtesting.md` — 통합 전 Backtesting 페이지 결정 (★ DEPRECATED)
+> - `decisionlog/10_sidebar.md` — 사이드바 그룹 변경 (검증 그룹 사라짐)
+
+---
+
+> ## 🎨 KPI / UX 통일 변경 — 2026-05-11
+>
+> ### 변경 내역 (요약)
+>
+> 1. **Hero KPI 디자인 통일** — `st.markdown` + 수동 HTML → **`st.metric`** (Holdings 와 동일 native 컴포넌트)
+>    - `help=` 매개변수로 ⓘ tooltip (이전 수동 HTML 제거)
+>    - `delta=` 로 TEST/HO 라벨 표시
+> 2. **Differentiator card navigation 변경**:
+>    - Card 1 (Volatility-Aware Allocation): Methodology 페이지 → **Risk Metrics 페이지**
+>    - Card 2 (Validated Across Market Regimes): Backtesting 페이지 → **Risk Metrics 페이지**
+> 3. **caption 직관화**:
+>    - Sub-header description 한글화 (학자 인용 제거, 운용 narrative 위주)
+>    - 영역 3 caption 의 "HO 24m" → "Hold Out 24m", 부차적 가이드 ("Sector Watch 영역 8 정당화") 제거
+>    - 영역 4 (Differentiator) 의 영어 학술 용어 한글화
+> 4. **Navigation cards 6 → 5 카드** (Methodology / Backtesting 통합 후 단일 행)
+> 5. **Page Header 우상단 메타 정보 제거** — "● Active (Simulated) / Benchmark / Data as of" 모두 제거
+>
+> ### 영향 파일
+>
+> - `app.py`, `lib/overview_charts.py`, `lib/page_helpers.py`, `lib/tooltips.py`
+>
+> **자세한 변경 일지**: `decisionlog/updatelog.md` (2026-05-11 섹션)
 
 ---
 

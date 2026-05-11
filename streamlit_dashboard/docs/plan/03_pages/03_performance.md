@@ -1,8 +1,49 @@
 # Performance 페이지 — 와이어프레임
 
 > **관련 decisionlog**: `03_performance.md`
-> **상태**: 확정
-> **결정 수**: 9 영역 (메타 M-1 ~ M-4 + 영역 1~9)
+> **상태**: 확정 + **2026-05-11 영역 4 신규 추가 (9 → 10), 영역 9 (분포 통계) 일별 only 단순화**
+> **결정 수**: 10 영역 (메타 M-1 ~ M-4 + 영역 1~10)
+
+---
+
+> ## 🆕 2026-05-11 영역 변경
+>
+> ### 영역 4 신규 추가 — 누적 수익률 (Performance Trend)
+>
+> 단일 누적 차트 (Drawdown 제외, Risk Metrics 영역 4 와 책임 분리).
+> 함수: `lib/performance_charts.py:render_cumulative_only`
+>
+> ```
+> ┌─ 영역 4: 누적 수익률 — Performance Trend ───────────────────────────┐
+> │ caption (사이드바 기간 토글 + 벤치마크 토글 효과 설명)               │
+> │ [Log scale Toggle]                                                  │
+> │ ┌──────────────────────────────────────────────────────────────┐    │
+> │ │  Fund (Cobalt Blue, 굵게) ──────────────────────────────     │    │
+> │ │  SPY / 균등가중 / 역변동성 (사이드바 토글 시 추가)            │    │
+> │ │  Regime 배경 (FULL 일 때만) + 이벤트 annotation              │    │
+> │ │  Y축: Linear / Log 토글                                       │    │
+> │ │  X축: rangeslider (기간 줌인 가능)                            │    │
+> │ └──────────────────────────────────────────────────────────────┘    │
+> └─────────────────────────────────────────────────────────────────────┘
+> ```
+>
+> ### 영역 9 (분포 통계) 단순화 — 일별 only
+>
+> 월별 Tab 제거 → 일별만 표시.
+> 사유: 월별 (192 sample) 은 CLT 로 분포가 정규에 수렴 → 분포 형태 분석 의미 약함.
+>
+> ### 영역 번호 매핑 (Before → After)
+>
+> | Before | After |
+> |---|---|
+> | 4. Annual Returns | 5. Annual Returns |
+> | 5. Active Return 분석 | 6. Active Return 분석 |
+> | 6. Annualized Rolling Return | 7. Annualized Rolling Return |
+> | 7. Regime 메트릭 Heatmap | 8. Regime 메트릭 Heatmap |
+> | 8. 분포 통계 카드 | 9. 분포 통계 카드 (일별 only) |
+> | 9. Footer | 10. Footer |
+>
+> 자세한 결정 이력은 `decisionlog/03_performance.md` 상단 박스 참조.
 
 ---
 

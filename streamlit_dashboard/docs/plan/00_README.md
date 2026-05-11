@@ -1,7 +1,7 @@
 # Adaptive VolControl Fund — Streamlit 대시보드 구현 계획 (Plan)
 
 > **프로젝트**: Adaptive VolControl Fund (어댑티브 볼컨트롤 펀드) Streamlit 펀드 홍보 대시보드
-> **모델**: `mat_eq_mcap_raw_he` (최종 확정 Top 1, 2026-05-10 변경)
+> **모델**: `mat_eq_eq_raw_pap` (최종 확정 Top 1, 2026-05-11 4차 변경)
 > **작성 시점**: 2026-05-10
 > **작성 목적**: decisionlog 의 모든 결정사항을 구현 가능한 plan 으로 변환
 
@@ -17,7 +17,7 @@
 - **한글**: 어댑티브 볼컨트롤 펀드
 - **슬로건**: "변동성 예측 기반 적응형 자산배분 — Volatility-Aware Adaptive Allocation"
 - **핵심 메커니즘**: Black-Litterman (BL) + LSTM 변동성 예측 + 4-slot config 검증
-- **선정 config**: `mat_eq_mcap_raw_he` (prior=capm_eq / p_weight=mcap / q_mode=raw_lam / **omega_mode=he_litterman**, 2026-05-11 최종 변경 — rms 모델 문제로 he 로 재변경)
+- **선정 config**: `mat_eq_eq_raw_pap` (prior=capm_eq / p_weight=eq / q_mode=raw_lam / **omega_mode=ff3_paper**, 2026-05-11 4차 최종 변경 — 사용자 결정으로 1차 모델로 회귀)
 
 ### 1.2 펀드 기준 메트릭 (HOLD_OUT 24m)
 
@@ -87,8 +87,8 @@ plan/
 │   ├── 04_risk_metrics.md         # Risk Metrics 와이어프레임
 │   ├── 05_holdings.md             # Holdings 와이어프레임
 │   ├── 06_sector_watch.md         # Sector Watch 와이어프레임
-│   ├── 07_methodology.md          # Methodology 와이어프레임
-│   ├── 08_backtesting.md          # Backtesting 와이어프레임
+│   ├── 07_methodology.md          # 🚨 DEPRECATED 2026-05-11 — Sankey 만 Overview 영역 6 이전
+│   ├── 08_backtesting.md          # 🚨 DEPRECATED 2026-05-11 — Regime+Sub-events 만 Risk Metrics 영역 5/6 이전
 │   └── 09_about.md                # About 메타만
 ├── 04_implementation_steps.md      # 구현 단계 (Phase 1/2/3) + 우선순위
 └── 05_validation.md               # 검증 / 테스트 / 한계
@@ -107,8 +107,8 @@ plan/
 | `03_pages/04_risk_metrics.md` | Risk Metrics 페이지 8 영역 와이어프레임 | `04_risk_metrics.md` |
 | `03_pages/05_holdings.md` | Holdings 페이지 8 영역 와이어프레임 | `05_holdings.md` |
 | `03_pages/06_sector_watch.md` | Sector Watch 페이지 8 영역 (HO 정당화) | `06_sector_watch.md` |
-| `03_pages/07_methodology.md` | Methodology 페이지 8 영역 (LSTM walk-forward) | `07_methodology.md` |
-| `03_pages/08_backtesting.md` | Backtesting 페이지 7 영역 (Stress 제거) | `08_backtesting.md` |
+| `03_pages/07_methodology.md` | 🚨 DEPRECATED 2026-05-11 — 통합 삭제 / Sankey → Overview 영역 6 / 이력 보존 | `07_methodology.md` |
+| `03_pages/08_backtesting.md` | 🚨 DEPRECATED 2026-05-11 — 통합 삭제 / Regime+Sub-events → Risk Metrics 영역 5/6 / 이력 보존 | `08_backtesting.md` |
 | `03_pages/09_about.md` | About 페이지 메타만 (영역별 = 구현 후 팀 상의) | `09_about.md` |
 | `04_implementation_steps.md` | Phase 1/2/3 구현 단계, 페이지 의존성 | (모든 결정 종합) |
 | `05_validation.md` | 데이터 무결성, Streamlit Cloud 체크리스트, 한계 | (모든 결정 종합) |
@@ -136,8 +136,8 @@ plan/
 | Risk Metrics (8 영역, Hill 축소) | `04_risk_metrics.md` | `03_pages/04_risk_metrics.md` |
 | Holdings (8 영역) | `05_holdings.md` | `03_pages/05_holdings.md` |
 | Sector Watch (8 영역, HO 정당화) | `06_sector_watch.md` | `03_pages/06_sector_watch.md` |
-| Methodology (8 영역, walk-forward) | `07_methodology.md` | `03_pages/07_methodology.md` |
-| Backtesting (7 영역, Stress 제거) | `08_backtesting.md` | `03_pages/08_backtesting.md` |
+| ~~Methodology~~ 🚨 통합 삭제 (Sankey → Overview 영역 6) | `07_methodology.md` (이력) | `03_pages/07_methodology.md` (이력) |
+| ~~Backtesting~~ 🚨 통합 삭제 (Regime+Sub-events → Risk Metrics 영역 5/6) | `08_backtesting.md` (이력) | `03_pages/08_backtesting.md` (이력) |
 | About (메타만) | `09_about.md` | `03_pages/09_about.md` |
 
 ### 5.3 D~L 섹션 결정

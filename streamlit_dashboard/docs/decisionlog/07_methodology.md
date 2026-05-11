@@ -1,9 +1,42 @@
-# C-1-6. Methodology 페이지
+# C-1-6. Methodology 페이지 (DEPRECATED)
 
 > **파일**: `07_methodology.md`
 > **결정 시점**: 2026-05-10
-> **상태**: 확정 (페이지 메타 Method M-1~M-4 + 영역 1~9)
+> **상태**: 🚨 **페이지 통합 삭제 — 2026-05-11** (Reference 보존)
 > **포함**: 페이지 메타 결정 / Sub-header / Methodology Overview (Plotly Sankey) / Black-Litterman 상세 + 4-slot config / LSTM 변동성 예측 (walk-forward 명시) / Factor 분석 (CAPM + FF5) / 정규성 검정 (Jarque-Bera) / 한계 + 향후 개선 (5개 → 3개 한계 축소)
+
+---
+
+> ## 🚨 페이지 통합 이력 — 2026-05-11
+>
+> **본 페이지는 통합 삭제되었습니다.** 본 의사결정 로그는 학술적/구현 이력 보존 목적으로 reference 용으로 유지됩니다.
+>
+> ### 이관 내역
+>
+> | 원본 영역 | 처리 |
+> |---|---|
+> | 영역 3: Methodology Overview (Plotly Sankey) | ✅ **Overview 페이지 영역 6 으로 이전** (`lib/methodology_charts.py:render_methodology_sankey` → `lib/overview_charts.py:render_methodology_sankey`) |
+> | 영역 4: Black-Litterman 상세 + 4-slot config | ❌ Deprecated (사용 안됨) |
+> | 영역 5: LSTM 변동성 예측 (walk-forward) | ❌ Deprecated |
+> | 영역 6: Factor 분석 (CAPM + FF5) | ❌ Deprecated |
+> | 영역 7: 한계 + 향후 개선 (3 한계 카드) | ❌ Deprecated |
+>
+> ### 통합 사유
+>
+> BL+LSTM 의 데이터 흐름은 **단일 Sankey 다이어그램** 으로 충분히 전달 가능. Methodology 의 학술 detail (수식 / Walk-forward 파라미터 / Factor 분석 / 한계 narrative) 은 별도 페이지로 분리할 필요성 < 사용자가 한 페이지에서 전체 흐름 파악하는 가치 + 페이지 수 단순화.
+>
+> ### 관련 코드 변경
+>
+> - **삭제**: `pages/07_Methodology.py`, `lib/methodology_charts.py`
+> - **이전**: Sankey 함수 + `SANKEY_NODES` + `SANKEY_LINKS` dict → `lib/overview_charts.py`
+> - **사이드바**: `lib/page_helpers.py` 의 "검증" 그룹 → "메타" 그룹만 남음 (Backtesting 도 동시 통합)
+> - **Overview Navigation Cards**: 6 → 5 카드
+>
+> ### 향후 재도입 가능성
+>
+> 학술 detail (BL 수식 / Walk-forward / Factor 분석) 이 다시 필요하면:
+> - 옵션 A: About / FAQ 페이지의 expander 안에 통합
+> - 옵션 B: PDF / 별도 학술 부록 페이지
 
 ---
 

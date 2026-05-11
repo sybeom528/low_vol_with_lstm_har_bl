@@ -1,9 +1,67 @@
 # C-1-5. Sector Watch 페이지
 
 > **파일**: `06_sector_watch.md`
-> **결정 시점**: 2026-05-10
-> **상태**: 확정 (페이지 메타 Sector M-1~M-4 + 영역 1~9, ★ HO 정당화 narrative 포함)
-> **포함**: 페이지 메타 결정 / Sub-header (HO narrative 명시) / Sector Summary KPI 5개 / Sector Treemap / Sector Decomposition 표 / Sector Tilt vs SPY / Sector 시계열 변화 (Sector Rotation) / ★★★ HO 24m 분석 + 정당화 narrative
+> **결정 시점**: 2026-05-10 / **2026-05-11~12 UX/Narrative 보강**
+> **상태**: 확정 + UX/Narrative 보강
+> **포함**: 페이지 메타 결정 / Sub-header / Sector Summary KPI 5개 (KPI 3 교체) / Sector Treemap / Sector Decomposition 표 (% 산식 정정) / Sector Tilt vs SPY / Sector 시계열 변화 / Hold Out 24m 분석 (Chart 1-4, Chart 2 신규)
+
+---
+
+> ## 🔄 KPI / Narrative / 시각 보강 변경 — 2026-05-11~12
+>
+> ### 변경 내역 (요약)
+>
+> #### 1. KPI 변경
+>
+> | 위치 | Before | After |
+> |---|---|---|
+> | KPI 2 라벨 | "Avg \|Tilt\| vs SPY" | **"섹터 비중 평균 차이 (vs SPY)"** |
+> | KPI 3 (Active Bets) | "\|Tilt\| > 1%p 섹터 수" (거의 항상 10-11, 정보 가치 ↓) | **"섹터 비중 최대 차이 (vs SPY)"** = max \|Tilt\| |
+> | KPI 4 value | "Industrials" (잘림) | **"산업재"** (한글 매핑) |
+> | KPI 5 라벨 | "Most Underweight ★" (IT 일 때 별표) | **"Most Underweight"** (별표 제거) |
+> | KPI 5 value | "Information ..." (잘림) | **"IT"** (한글 매핑) |
+>
+> #### 2. Sector 한글 매핑 (KPI 카드 한정)
+>
+> `SECTOR_KO_MAP` 신규 — GICS 11 영문 → 한글 (IT, 헬스케어, 금융, 임의소비재, 산업재, 통신, 필수소비재, 에너지, 유틸리티, 부동산, 소재). 다른 차트 (Treemap, Decomposition 표, Tilt Tornado, Rotation) 는 영문 GICS 표준 유지.
+>
+> #### 3. "베팅" 표현 일괄 제거
+>
+> - KPI 3 라벨: "최대 베팅 크기" → "섹터 비중 최대 차이" (도박 톤 제거)
+> - 영역 6 subheader: "Sector Tilt vs SPY — Active Bets" → "Sector Tilt vs SPY — 섹터 비중 차이"
+> - Caption "활성 베팅 / 큰 베팅" → "의미 있는 차이 / 큰 차이"
+>
+> #### 4. Sector Decomposition 표 (영역 5) % 산식 정정 (Bug Fix)
+>
+> - `st.column_config` 의 printf `%.Nf%%` 가 ×100 자동 처리 X
+> - `df_display` 사본 + ×100 (Weight / Tilt / Return_12m / Volatility / Contribution)
+> - Weight 가 0.20% 로 잘못 표시되던 버그 해결
+>
+> #### 5. 영역 8 (Hold Out 24m 분석) 강화
+>
+> - **Subheader**: "HO 24m 분석 + 정당화 narrative" → **"Hold Out 24m 분석"** (부차적 표현 제거)
+> - **★★★ 강조 제거** (3개)
+> - **Chart 2 신규 (4 → 5 chart)**: "IT 섹터 변동성 − 시장 평균 (Spread, %p)"
+>   - 산식: panel[gics_sector=="IT"].vol_60d 평균 − 전체 평균
+>   - 0 기준선 + 양수 영역 fill + 16년 평균 점선
+>   - **본 펀드의 LSTM 변동성 인지 운용 → IT under-weight 의 학술 근거 시각화**
+>   - 전체 평균 +4.15%p, Hold Out 24m +8.67%p 차이
+> - **도입 narrative + 결론 박스 한글화**:
+>   - 학자 인용 (Markowitz 1952, Fama-French 1992) 제거
+>   - "vol-target / risk-aware / sector concentration / trade-off / underperform" → 한글
+>   - "BL+LSTM vol-target" → "BL+LSTM 변동성 예측 모델"
+> - Chart 번호 재정렬: Chart 1 / **Chart 2 (신규)** / Chart 3 (← 2) / Chart 4 (← 3)
+>
+> #### 6. caption 일괄 한글화
+>
+> - Sub-header description: "HO 24m sector rotation 영향과 펀드의 sector 분산 운용의 양면성" 등 학술 표현 → "2024-2025년 섹터 변화가 펀드 성과에 미친 영향"
+> - 영역 4 (Treemap), 영역 5 (Decomp 표), 영역 6 (Tilt Tornado), 영역 7 (Rotation), 영역 8 caption 모두 한글 직관 표현
+>
+> ### 영향 파일
+>
+> - `lib/sector_charts.py`, `pages/06_Sector_Watch.py`
+>
+> **자세한 변경 일지**: `decisionlog/updatelog.md` (2026-05-11 / 2026-05-12 섹션)
 
 ---
 

@@ -1,9 +1,96 @@
 # C-1-3. Risk Metrics 페이지
 
 > **파일**: `04_risk_metrics.md`
-> **결정 시점**: 2026-05-10
-> **상태**: 확정 (페이지 메타 Risk M-1~M-4 + 영역 1~9, Hill 영역은 옵션 C 축소형 → Q-F2 추가 축소)
-> **포함**: 페이지 메타 결정 / Sub-header / Risk Summary KPI 5개 / Drawdown + Recovery / VaR / CVaR 분포 / Beta + R² + Tracking Error 시계열 / Risk Metrics 종합 표 / Tail Risk 분석 (Hill Estimator)
+> **결정 시점**: 2026-05-10 (영역 1~9) / **2026-05-11 통합 업데이트 (영역 5~6 신규, 9 → 11)**
+> **상태**: 확정 + 통합 업데이트 (영역 1~11)
+> **포함**: 페이지 메타 결정 / Sub-header / Risk Summary KPI 5개 / Drawdown + Recovery / **Regime 메트릭 자세한 비교 (신규)** / **Sub-events 분석 — 4 위기 (신규)** / VaR / CVaR 분포 / Beta + R² + Tracking Error 시계열 / Risk Metrics 종합 표 / Tail Risk 분석 (Hill Estimator)
+
+---
+
+> ## 🔄 페이지 통합 수신 이력 — 2026-05-11
+>
+> **Backtesting 페이지 통합 삭제에 따라 2개 영역이 본 페이지로 이전되었습니다.**
+>
+> ### 수신 내역
+>
+> | 영역 | 처리 | 원본 |
+> |---|---|---|
+> | **영역 5: Regime 메트릭 자세한 비교** | 🆕 신규 (Drawdown 다음 위치) | `decisionlog/08_backtesting.md` 영역 5 |
+> | **영역 6: Sub-events 분석 — 4 위기** | 🆕 신규 (Regime 다음 위치) | `decisionlog/08_backtesting.md` 영역 6 |
+> | 영역 7-11: 기존 5-9 | 영역 번호 +2 shift | (영역 번호만 변경) |
+>
+> ### 동작 보장
+>
+> - **FULL 기준 고정** — 신규 영역 5/6 은 사이드바 period 토글 영향 받지 않음 (Backtesting 페이지에서의 원 동작 유지)
+> - **함수 호출 변경 없음** — `render_regime_detail_table(fund_ret, fund_spy, fund_rf)`, `render_sub_events(fund_ret, fund_spy, fund_rf)` 그대로
+> - **lib import**: `from lib.backtesting_charts import render_regime_detail_table, render_sub_events` 신규 추가
+>
+> ### 통합 사유
+>
+> Backtesting 페이지의 **Regime + Sub-events 두 영역** 은 위험 분석 흐름 (Drawdown → Regime별 위험 → 위기별 회복) 과 자연스럽게 연결. Risk Metrics 페이지의 분석 narrative 가 강화되며, 페이지 수 단순화 (9 → 7 페이지) 효과.
+>
+> ### 관련 의사결정 이력 (참조용)
+>
+> - `decisionlog/08_backtesting.md` — 통합 전 Backtesting 페이지 결정 (★ DEPRECATED, 영역 5/6 학술 근거 보존)
+> - `decisionlog/10_sidebar.md` — 사이드바 검증 그룹 사라짐
+
+---
+
+> ## 🔄 영역 7 (VaR / CVaR) 단순화 — 2026-05-11
+>
+> ### 변경 내역
+>
+> **Before**: 월별 / 일별 Tab 두 가지 표시
+> **After**: **일별 only** 단순화
+>
+> ### 변경 사유
+>
+> 1. **통계적 신뢰성** — 월별 (192 sample) 의 5% 분위수는 단 ~9.6개 → 통계적 신뢰성 매우 낮음. 단 몇 개 극단값에 좌우. 일별 (~4,000 sample) 의 5% 분위수는 ~200개로 통계 안정.
+>
+> 2. **학술/실무 VaR 표준 = 일별**:
+>    - Basel III (은행 자본 규제) → 일별
+>    - J.P. Morgan RiskMetrics (1996) → 일별
+>    - 학술 논문 대부분 → 일별
+>
+> 3. **분포 통계 (Performance 영역 9) 와 일관성** — 꼬리/극단 메트릭은 모두 일별:
+>    - Risk Metrics 영역 7 (VaR/CVaR) — 일별 ✓
+>    - Risk Metrics 영역 10 (Tail Risk Hill) — 일별 ✓
+>    - Performance 영역 9 (분포 통계) — 일별 ✓
+>
+> 4. **UX 단순화** — Tab 제거, 사용자 인지 부담 ↓
+>
+> ### 코드 영향
+>
+> - `render_var_cvar_distribution` 시그니처 유지 (호환성, `noqa: ARG001`)
+> - 함수 내부 월별 Tab 로직 제거 → 일별 차트만 직접 표시
+> - 사이드바 기간 토글 (TEST / Hold Out / FULL) 은 일별에서도 동일 작동
+
+---
+
+> ## 🎨 KPI / UX 통일 + 차트 시각 보강 — 2026-05-11
+>
+> ### 변경 내역 (요약)
+>
+> 1. **Risk KPI 디자인 통일** — `st.markdown + 수동 HTML` → **`st.metric`** (Holdings 와 동일)
+>    - delta_color: "inverse" (Vol/MDD — 낮을수록 좋음) / "off" (Beta/R²/TE)
+>    - help tooltip 으로 ⓘ 정보
+> 2. **Rolling 위험 메트릭 (영역 8) — 벤치마크 비교선 추가**:
+>    - Vol / Sortino: 절대 메트릭 → SPY/EW/IVW 자체 rolling 값 비교
+>    - Beta / R² / TE: SPY 기준 메트릭 → EW/IVW 의 SPY 대비 비교 (펀드의 SPY 추적 특성 직접 비교)
+>    - Fund 라인: 메트릭별 다른 색상 + 굵은 실선 / 벤치마크: 점선 + 벤치마크별 색상
+>    - 함수 시그니처 확장 (`ew_ret`, `ivw_ret` 추가)
+> 3. **VaR/CVaR + 분포 통계 차트 x축 동적 range**:
+>    - 자동 범위 (±12%) → 0.5%/99.5% 분위수 기반 동적 (×1.15) → 중앙 분포 가독성 ↑
+>    - 극단 outlier 자르고 99% 데이터 영역 강조
+> 4. **caption 일괄 한글화** — 학술/기술 표현 직관 한글로 (학자 인용 제거)
+> 5. **부차적 가이드 제거** — "Sector Watch 영역 8 (HO 정당화 narrative) 와 직접 연결" 등
+> 6. **동명 함수 충돌 해결** — `calc_avg_recovery_time` (Series 용) vs `calc_avg_recovery_from_subevents` (DataFrame 용) 분리. Drawdown 평균 Recovery 에러 수정.
+>
+> ### 영향 파일
+>
+> - `lib/risk_charts.py`, `pages/04_Risk_Metrics.py`, `lib/metric_calculators.py`, `lib/performance_charts.py` (분포 카드 x축)
+>
+> **자세한 변경 일지**: `decisionlog/updatelog.md` (2026-05-11 / 2026-05-12 섹션)
 
 ---
 

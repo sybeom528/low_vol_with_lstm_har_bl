@@ -1,7 +1,7 @@
 # Streamlit 대시보드 의사결정 로그 — 인덱스
 
 > **프로젝트**: Adaptive VolControl Fund — Streamlit 펀드 홍보 대시보드
-> **모델**: `mat_eq_mcap_raw_he` (최종 확정 Top 1, 2026-05-10 변경 — turnover 안정성 + spike 완화)
+> **모델**: `mat_eq_eq_raw_pap` (최종 확정 Top 1, 2026-05-11 4차 변경 — 사용자 결정으로 1차 모델로 회귀)
 > **작성 목적**: 모든 의사결정의 배경 / 근거 / 결과 (함의) 를 명확히 기록하여 향후 검토 가능하게 함
 > **작성 시작**: 2026-05-10
 > **분리 일자**: 2026-05-10 (단일 7,469 줄 파일 → 11개 파일 → 12개 파일 [D~L 분리])
@@ -31,13 +31,11 @@
 **모델 변경 이력**:
 - **1차 (2026-05-10)**: `mat_eq_eq_raw_pap` (별도 기준 선정) — pap 계열 (ff3_paper omega) 의 weight spike 패턴 narrative 안정성 저해
 - **2차 (2026-05-10)**: `mat_eq_mcap_raw_rms` 로 변경 (omega=rmse) — turnover 안정성 + spike 완화
-- **3차 (2026-05-11, 최종)**: **`mat_eq_mcap_raw_he`** 로 변경 (omega=he_litterman, 사용자 결정 — rms 모델 문제로 재변경)
-  - 신모델 차원: prior=capm_eq / **p_weight=mcap** (시가총액 가중) / q_mode=raw_lam / **omega_mode=he_litterman** (He & Litterman 1999)
-  - 메트릭 (FULL): CAGR 13.78% / Vol 11.80% / MDD -13.93% / Sharpe 1.04 / Sortino 1.83 / Turnover 0.42
-  - 156 config Sortino Rank: **14 / 159 (Top 8.8%)** — 여전히 우수
-  - rms vs he 차이 미미 (omega scaling 차이만)
+- **3차 (2026-05-11)**: `mat_eq_mcap_raw_he` 로 변경 (omega=he_litterman, 사용자 결정 — rms 모델 문제로 재변경)
+- **4차 (2026-05-11, 최종)**: **`mat_eq_eq_raw_pap`** 로 재변경 (사용자 결정 — 1차 모델로 회귀)
+  - 신모델 차원: prior=capm_eq / **p_weight=eq** (균등 가중) / q_mode=raw_lam / **omega_mode=ff3_paper** (Fama-French 3-factor paper)
 
-- 본 대시보드는 `mat_eq_mcap_raw_he` 기준으로 구축됩니다.
+- 본 대시보드는 `mat_eq_eq_raw_pap` 기준으로 구축됩니다.
 
 **펀드 모델 핵심 메트릭** (참조용):
 
@@ -73,11 +71,12 @@
 | [04_risk_metrics.md](04_risk_metrics.md) | C-1-3. Risk Metrics 페이지 (영역 1~9) + 페이지 메타 (Risk M-1~M-4) | 메타 4 + 영역 8 | 확정 |
 | [05_holdings.md](05_holdings.md) | C-1-4. Holdings 페이지 (영역 1~8) + 페이지 메타 (Hold M-1~M-4) | 메타 4 + 영역 7 | 확정 |
 | [06_sector_watch.md](06_sector_watch.md) | C-1-5. Sector Watch 페이지 (영역 1~9) + HO 정당화 narrative (영역 8) | 메타 4 + 영역 8 | 확정 |
-| [07_methodology.md](07_methodology.md) | C-1-6. Methodology 페이지 (영역 1~9) + Factor 분석 / LSTM walk-forward / 5→3 한계 | 메타 4 + 영역 8 | 확정 |
-| [08_backtesting.md](08_backtesting.md) | C-1-7. Backtesting 페이지 (영역 1~7) + 균형 옵션 (B) + Stress Test 제거 narrative | 메타 4 + 영역 7 (8→7 축소) | 확정 |
+| [07_methodology.md](07_methodology.md) | 🚨 **DEPRECATED 2026-05-11** — 통합 삭제 (Sankey → Overview 영역 6) / 학술 이력만 보존 | (이력 보존) | DEPRECATED |
+| [08_backtesting.md](08_backtesting.md) | 🚨 **DEPRECATED 2026-05-11** — 통합 삭제 (Regime + Sub-events → Risk Metrics 영역 5/6) / 학술 이력만 보존 | (이력 보존) | DEPRECATED |
 | [09_about.md](09_about.md) | C-1-8. About / FAQ 페이지 메타 결정 (영역별 = 구현 후 팀 상의) | 메타 4 + 영역 부분 확정 | 부분 확정 |
 | [10_sidebar.md](10_sidebar.md) | C-4 사이드바 구성 + C 섹션 완료 요약 + Q-5 narrative 정정 + Selection Bias 부록 메모 | C4: 5 | 확정 |
 | [11_dl_sections.md](11_dl_sections.md) | D~L 섹션 (데이터 / Disclosure / 시뮬 / UX / 디자인 / 컴플라이언스 / 기술 / 스토리 / 한계) | D: 5 / E: 4 / F~L: 미정 또는 부분 확정 | D, E 확정 / F~L 진행 예정 |
+| [updatelog.md](updatelog.md) | 📅 **최초 생성 (2026-05-10) 이후 모든 변경 사항 시간 순 종합 일지** — 페이지별 박스의 종합본 | (시간 순) | **활성** |
 
 ---
 

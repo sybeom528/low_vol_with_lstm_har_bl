@@ -1,9 +1,82 @@
 # C-4 사이드바 + C 섹션 완료 요약
 
 > **파일**: `10_sidebar.md`
-> **결정 시점**: 2026-05-10
-> **상태**: C-4 사이드바 확정 + C 섹션 완료 요약
-> **포함**: C-4 사이드바 구성 + 페이지 그룹화 (5 그룹 + 2 토글) / C 섹션 완료 요약 / 다른 페이지 narrative 일괄 정정 (Q-5) / About / FAQ Selection Bias 부록 (Q-B3 메모)
+> **결정 시점**: 2026-05-10 (6 그룹) / **2026-05-11 통합 업데이트 (5 그룹 → 4 그룹)**
+> **상태**: C-4 사이드바 확정 + 통합 업데이트
+> **포함**: C-4 사이드바 구성 + 페이지 그룹화 (5 그룹 + 2 토글) / **검증 그룹 제거 (2026-05-11)** / C 섹션 완료 요약 / 다른 페이지 narrative 일괄 정정 (Q-5) / About / FAQ Selection Bias 부록 (Q-B3 메모)
+
+---
+
+> ## 🔄 사이드바 구조 변경 이력 — 2026-05-11
+>
+> **Methodology / Backtesting 페이지 통합 삭제에 따라 사이드바 그룹 구조가 변경되었습니다.**
+>
+> ### 변경 내역
+>
+> | 항목 | Before (2026-05-10) | After (2026-05-11) |
+> |---|---|---|
+> | 그룹 수 | 6 그룹 | **5 그룹** |
+> | 페이지 수 | 8 페이지 (Overview + 7) | **6 페이지 (Overview + 5)** |
+> | 그룹 5 (검증) | Methodology + Backtesting | 🚨 **그룹 사라짐** |
+> | 그룹 6 (메타) → 그룹 5 | About / FAQ | About / FAQ (그룹 번호만 5 로 shift) |
+>
+> ### 신규 사이드바 구조
+>
+> ```
+> 📅 기간 (Period)       — TEST / Hold Out / FULL (default: TEST)
+> 📊 비교 (Benchmark)    — SPY / EW / IVW
+>
+> ── 개요 ──            Overview
+> ── 체험 ──            Investment Simulator
+> ── 성과 ──            Performance, Risk Metrics
+> ── 보유 ──            Holdings, Sector Watch
+> ── 메타 ──            About / FAQ
+> ```
+>
+> ### 통합 사유
+>
+> - **Methodology 페이지** → Sankey 만 Overview 영역 6 으로 통합 (BL+LSTM 흐름은 단일 다이어그램으로 충분)
+> - **Backtesting 페이지** → Regime + Sub-events 만 Risk Metrics 영역 5/6 으로 통합 (Robustness 메트릭은 가상 투자자 친화 X)
+> - 결과: **검증 그룹 자체가 사라짐** (그룹 5)
+>
+> ### 관련 의사결정 이력 (참조용)
+>
+> - `decisionlog/07_methodology.md` — Methodology 페이지 통합 이력 (★ DEPRECATED)
+> - `decisionlog/08_backtesting.md` — Backtesting 페이지 통합 이력 (★ DEPRECATED)
+> - `decisionlog/02_overview.md` — Sankey 수신 이력 (영역 6 신규)
+> - `decisionlog/04_risk_metrics.md` — Regime + Sub-events 수신 이력 (영역 5/6 신규)
+
+---
+
+> ## 🔄 사이드바 UX 추가 변경 — 2026-05-11
+>
+> ### 변경 내역 (요약)
+>
+> 1. **기간 토글 순서 + 기본값**:
+>    - 순서: `FULL/TEST/HO` → **`TEST/HO/FULL`**
+>    - 기본값: `FULL` → **`TEST`** (사용자 진입 시 학습 기간 우선 표시)
+>    - 표시: `HO` → **`Hold Out`** (`format_func`, 내부 value 는 `"HO"` 유지 → 호환성)
+> 2. **벤치마크 라벨 한글화**:
+>    - `SPY` → **`SPY (S&P 500 ETF)`** + help tooltip
+>    - `EW (펀드 universe)` → **`균등가중`** + help tooltip ("펀드 universe 의 모든 종목을 동일 비중으로 보유")
+>    - `IVW (Naive Low-vol)` → **`역변동성 가중`** + help tooltip ("변동성이 낮은 종목일수록 큰 비중 — Low-Volatility Anomaly")
+> 3. **Widget state 보존 (page navigation 시)** — Streamlit multipage 의 widget unmount/remount 시 reset 문제 해결:
+>    - Widget key 와 source-of-truth key 분리 (`_sidebar_period` vs `period`)
+>    - 페이지 진입 시 source → widget key 복원
+>    - Widget 변경 시 `on_change` callback 으로 source 업데이트
+> 4. **Data 기간 표시 범위로**:
+>    - `Data: 2025-12` → `Data: 2010-01 ~ 2025-12`
+> 5. **Footer Meta 정리**:
+>    - "Built with: Streamlit + Plotly" → 제거 (Footer 부적합)
+>    - "학술 / 경진대회 목적" → **"부트캠프 최종 프로젝트"** (실제 프로젝트 목적 반영)
+>    - Last updated: 2026-05-12
+> 6. **Page Header 우상단 메타 정보 제거** — "● Active (Simulated) / Benchmark: S&P 500 / Data as of: 2025-12-31" 모두 제거 (사이드바 + Footer 와 정보 중복)
+>
+> ### 영향 파일
+>
+> - `lib/page_helpers.py:render_sidebar`, `lib/page_helpers.py:render_page_header`, `lib/disclosure.py:init_session_state`, `lib/disclosure.py:render_footer`
+>
+> **자세한 변경 일지**: `decisionlog/updatelog.md` (2026-05-11 섹션)
 
 ---
 

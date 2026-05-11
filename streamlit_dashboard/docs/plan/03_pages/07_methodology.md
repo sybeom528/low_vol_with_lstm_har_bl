@@ -1,8 +1,41 @@
-# Methodology 페이지 — 와이어프레임
+# Methodology 페이지 — 와이어프레임 (DEPRECATED)
 
 > **관련 decisionlog**: `07_methodology.md`
-> **상태**: 확정 (★ LSTM walk-forward 명시 + 5→3 한계 축소 + 동적 narrative)
+> **상태**: 🚨 **페이지 통합 삭제 — 2026-05-11** (Reference 보존)
 > **결정 수**: 8 영역 (메타 Method M-1~M-4 + 영역 1~9)
+
+---
+
+> ## 🚨 페이지 통합 이력 — 2026-05-11
+>
+> **본 페이지는 통합 삭제되었습니다.** 본 와이어프레임은 학술/UX 설계 이력 보존 목적으로 reference 용으로 유지됩니다.
+>
+> ### 이관 내역
+>
+> | 와이어프레임 영역 | 처리 |
+> |---|---|
+> | 영역 3: Methodology Overview Plotly Sankey | ✅ **Overview 페이지 영역 6 으로 이전** |
+> | 영역 4-7: BL detail / LSTM detail / Factor / Limitations | ❌ Deprecated (사용 안됨) |
+>
+> ### 신규 위치 와이어프레임 — Overview 영역 6
+>
+> ```
+> ┌─ 영역 6: Methodology Overview — BL+LSTM 흐름 ─────────────────────┐
+> │ caption (9 노드 / 4 그룹)                                          │
+> │ ┌───────────────────────────────────────────────────────────────┐ │
+> │ │  [Market Data]   ─┐                                           │ │
+> │ │  [Returns Data]  ─┼─→ [BL Prior] ──┐                          │ │
+> │ │  [Sector/Mcap]   ─┘                ├─→ [BL Posterior] ─→ ...  │ │
+> │ │  [Returns Data] ──→ [LSTM Vol] ──→ [View/Confidence] ─┘       │ │
+> │ │  ...─→ [Optimizer] ─→ [Portfolio Weights]                     │ │
+> │ └───────────────────────────────────────────────────────────────┘ │
+> │ 범례: 데이터 / Black-Litterman / LSTM / Optimizer                  │
+> └────────────────────────────────────────────────────────────────────┘
+> ```
+>
+> ### 통합 사유
+>
+> 자세한 설명은 `decisionlog/07_methodology.md` 의 페이지 통합 이력 박스 참조.
 
 ---
 

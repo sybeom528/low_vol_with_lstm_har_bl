@@ -1,8 +1,54 @@
-# Backtesting 페이지 — 와이어프레임
+# Backtesting 페이지 — 와이어프레임 (DEPRECATED)
 
 > **관련 decisionlog**: `08_backtesting.md`
-> **상태**: 확정 (★ 균형 옵션 (B) 적용 + Stress Test 제거 → 9 영역 → 7 영역)
+> **상태**: 🚨 **페이지 통합 삭제 — 2026-05-11** (Reference 보존)
 > **결정 수**: 7 영역 (메타 BT M-1~M-4 + 영역 1~7)
+
+---
+
+> ## 🚨 페이지 통합 이력 — 2026-05-11
+>
+> **본 페이지는 통합 삭제되었습니다.** 본 와이어프레임은 학술/UX 설계 이력 보존 목적으로 reference 용으로 유지됩니다.
+>
+> ### 이관 내역
+>
+> | 와이어프레임 영역 | 처리 |
+> |---|---|
+> | 영역 3: Backtest Summary KPI 5 (TEST/HO Gap 등) | ❌ Deprecated |
+> | 영역 4: 156 config 누적 수익률 비교 | ❌ Deprecated |
+> | 영역 5: **Regime 메트릭 자세한 비교** | ✅ **Risk Metrics 페이지 영역 5 로 이전** |
+> | 영역 6: **Sub-events 분석 — 4 위기** | ✅ **Risk Metrics 페이지 영역 6 으로 이전** |
+> | 영역 7: Sensitivity Test (156 config) | ❌ Deprecated |
+>
+> ### 신규 위치 — Risk Metrics 영역 5/6
+>
+> ```
+> Risk Metrics 페이지 (9 → 11 영역):
+> ─────────────────────────────────────────────
+>  1. Header
+>  2. Sub-header
+>  3. Risk Summary KPI 5
+>  4. Drawdown + Recovery Time
+>  ─ 신규 ──────────────────────────────────
+>  5. Regime 메트릭 자세한 비교 (← Backtesting 영역 5)
+>  6. Sub-events 분석 — 4 위기 (← Backtesting 영역 6)
+>  ─ 기존 5-9, 영역 번호 +2 shift ─────────────
+>  7. VaR / CVaR 분포
+>  8. Rolling 5 메트릭
+>  9. Risk Metrics 종합 표
+> 10. Tail Risk — Hill
+> 11. Footer
+> ```
+>
+> ### 동작 보장
+>
+> - **FULL 기준 고정** — Risk Metrics 페이지의 사이드바 period 토글 영향 받지 않음 (원 동작 유지)
+> - 함수 호출 그대로: `render_regime_detail_table`, `render_sub_events`
+> - `lib/backtesting_charts.py` 보존 (해당 함수만 import 됨, 다른 함수는 deprecated)
+>
+> ### 통합 사유
+>
+> 자세한 설명은 `decisionlog/08_backtesting.md` 의 페이지 통합 이력 박스 참조.
 
 ---
 

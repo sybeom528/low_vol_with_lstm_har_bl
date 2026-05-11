@@ -1,9 +1,113 @@
 # C-1-2. Performance 페이지
 
 > **파일**: `03_performance.md`
-> **결정 시점**: 2026-05-10
-> **상태**: 확정 (페이지 메타 M-1~M-4 + 영역 1~9)
-> **포함**: 페이지 메타 결정 / Sub-header / Performance Summary KPI 5개 / Annual Returns 막대 / Active Return 분석 / Annualized Rolling Return / Regime 메트릭 비교 / 분포 통계 카드
+> **결정 시점**: 2026-05-10 (영역 1~9) / **2026-05-11 영역 4 신규 추가 (9 → 10)**
+> **상태**: 확정 + 누적 수익률 영역 신규 추가
+> **포함**: 페이지 메타 결정 / Sub-header / Performance Summary KPI 5개 / **누적 수익률 (신규)** / Annual Returns 막대 / Active Return 분석 / Annualized Rolling Return / Regime 메트릭 비교 / 분포 통계 카드 (일별 only, 2026-05-11 단순화)
+
+---
+
+> ## 🆕 영역 4 신규 추가 — 2026-05-11
+>
+> ### 추가 영역
+>
+> **영역 4: 누적 수익률 (Performance Trend) — 단일 차트 (Drawdown 제외)**
+>
+> 함수: `lib/performance_charts.py:render_cumulative_only`
+>
+> ### 추가 사유
+>
+> Performance 페이지 = "성과 분석" 인데 가장 기본인 누적 수익률 차트가 없는 것이 직관성 측면에서 어색했습니다. 학술/실무 펀드 보고서의 표준 1번 차트가 누적 수익률 (cumulative return) 입니다.
+>
+> ### Overview 영역 3 과의 차별화 (옵션 B 선택)
+>
+> | 항목 | Overview 영역 3 | Performance 영역 4 (신규) |
+> |---|---|---|
+> | 차트 구조 | **이중** (누적 + Drawdown) | **단일** (누적만) |
+> | Drawdown | 포함 (영역 3 하단) | 제외 (Risk Metrics 영역 4 에 별도) |
+> | 사이드바 기간 토글 | 영향 받음 | 영향 받음 (사이드바 기간 줌인/줌아웃) |
+> | Hero KPI 동기화 | Fixed (TEST + HO 별도) | period 토글에 따라 갱신 |
+> | Regime 배경 | FULL 일 때만 | FULL 일 때만 (일관) |
+> | 사용자 동선 | 메인 진입 시 전체 그림 | 깊이 있는 성과 분석의 시작 |
+>
+> ### 옵션 비교
+>
+> | 옵션 | 설명 | 결정 |
+> |---|---|---|
+> | A | Overview 와 같은 이중 차트 (누적 + DD) | ❌ Risk Metrics 영역 4 와 중복 |
+> | **B** | **누적만 단일 차트 (Drawdown 제외)** | **✅ 선택** |
+> | C | 추가 안 함 (현재 유지) | ❌ Performance 페이지 정체성 약화 |
+>
+> ### 책임 분리
+>
+> - **Overview 영역 3**: 펀드의 16년 전체 그림 (누적 + Drawdown 둘 다)
+> - **Performance 영역 4**: 기간별 누적 추이 (사이드바 기간 토글 활용)
+> - **Risk Metrics 영역 4**: Drawdown 전담 (Top 3 DD + Recovery Time)
+>
+> 각 페이지의 정체성과 책임이 더 명확해짐.
+>
+> ### 함의 — 영역 번호 +1 shift
+>
+> 후속 영역들이 모두 한 칸씩 밀림:
+> - 5. Annual Returns (← 4)
+> - 6. Active Return 분석 (← 5)
+> - 7. Annualized Rolling Return (← 6)
+> - 8. Regime 메트릭 Heatmap (← 7)
+> - 9. 분포 통계 카드 (← 8)
+> - 10. Footer (← 9)
+>
+> 총 9 영역 → **10 영역**.
+
+---
+
+> ## 🔄 영역 9 (분포 통계) 단순화 — 2026-05-11
+>
+> ### 변경 내역
+>
+> **Before**: 월별 / 일별 Tab 두 가지 표시
+> **After**: **일별 only** 단순화
+>
+> ### 변경 사유
+>
+> 월별 (192 sample) 의 분포 통계는 중심극한정리 (CLT) 효과로 분포가 정규에 수렴 → 분포 형태 (fat tail / 비대칭) 의 의미 있는 분석 불가. 일별 (~4,000 sample) 만이 실제 시장 분포 형태를 정확히 포착.
+>
+> 학술적으로도 Skewness / Kurtosis / Tail Ratio 의 의미 있는 분석은 일별 (또는 주별) 데이터 기준이 표준.
+>
+> ### 코드 영향
+>
+> - `render_distribution_stats` 시그니처 유지 (호환성)
+> - 함수 내부에서 월별 Tab 로직 제거 → 일별만 직접 표시
+> - 라인 수 ~80 → ~45
+
+---
+
+> ## 🎨 KPI / UX 통일 변경 — 2026-05-11
+>
+> ### 변경 내역 (요약)
+>
+> 1. **Performance KPI 디자인 통일** — `st.markdown + 수동 HTML` → **`st.metric`** (Holdings 와 동일)
+>    - help tooltip 으로 ⓘ 정보 (이전 수동 HTML ⓘ 제거)
+>    - delta 표시 형식 통일 ("+X% vs SPY")
+> 2. **CAGR 카드에 Gross + TC 누적 표시 추가**:
+>    - "Gross +X% · TC -Y% (편측 20bp = 0.20%/거래)" 형식
+>    - 거래비용 차감 전후를 한 카드에서 확인 가능
+> 3. **거래비용 표기 정정**:
+>    - "1회 거래당 0.10%" ❌ (오기) → **"편측 20bp = 1회 거래당 0.20%"** ✓
+>    - `final/bl_functions.py:apply_tc` 의 `tc` 가 편측 (per-side) rate 인 점 반영
+> 4. **caption 일괄 한글화** (40여 곳):
+>    - 학술/기술 표현 → 직관적 한글 (학자 인용 제거, 영어 학술 용어 풀어 쓰기)
+>    - "R1 회복 / R2 확장 / R3 변동" → "회복기 / 확장기 / 변동기"
+>    - 부차적 설명 ("(학술 정직성)", "자세한 ... 페이지 참조") 일괄 제거
+> 5. **Active Return 분석 영역 caption 강화**:
+>    - 영역 메타 caption 추가 (Active Return / Tracking Error 정의 + 일반 active fund 4-8%p 참고치)
+>    - 위/아래 차트 별도 caption (연별 막대 / Rolling 이중 축 두 라인 비교 방법)
+> 6. **Rolling 윈도우 selectbox 이동** — 페이지 레벨 → 함수 내부 (Rolling 차트 직전 — UX 인접성)
+>
+> ### 영향 파일
+>
+> - `lib/performance_charts.py`, `pages/03_Performance.py`, `lib/tooltips.py`
+>
+> **자세한 변경 일지**: `decisionlog/updatelog.md` (2026-05-11 섹션)
 
 ---
 

@@ -1,8 +1,25 @@
 # Overview 페이지 — 와이어프레임
 
 > **관련 decisionlog**: `02_overview.md`
-> **상태**: 확정 (영역 1~6 모두)
-> **결정 수**: 6 영역
+> **상태**: 확정 + **2026-05-11 통합 업데이트 (영역 6 신규 — Methodology Sankey)**
+> **결정 수**: 7 영역 (6 → 7)
+
+---
+
+> ## 🔄 통합 수신 이력 — 2026-05-11
+>
+> **Methodology 페이지 통합 삭제에 따라 영역 6 (Sankey) 가 추가되었습니다.**
+>
+> ### 변경 영역
+>
+> | 영역 | 변경 |
+> |---|---|
+> | 영역 4 (핵심 강점 카드) | Card 1/2 navigation → Risk Metrics (Methodology / Backtesting 페이지 삭제) |
+> | 영역 5 (Navigation Cards) | 6 → 5 카드 (단일 행, Methodology + Backtesting 제거) |
+> | 영역 6 (NEW: Methodology Sankey) | 🆕 신규 — BL+LSTM 9 노드 / 4 그룹 Plotly Sankey |
+> | 영역 7 (Footer) | 영역 번호 6 → 7 (Sankey 추가로 shift) |
+>
+> 자세한 설명은 `decisionlog/02_overview.md` 의 통합 수신 이력 박스 참조.
 
 ---
 

@@ -1,8 +1,55 @@
 # Risk Metrics 페이지 — 와이어프레임
 
 > **관련 decisionlog**: `04_risk_metrics.md`
-> **상태**: 확정 (Hill 영역 = 옵션 C 축소형 → Q-F2 추가 축소)
-> **결정 수**: 8 영역 (메타 Risk M-1~M-4 + 영역 1~9)
+> **상태**: 확정 + **2026-05-11 통합 업데이트 (영역 5/6 신규 — Regime + Sub-events)**
+> **결정 수**: 10 영역 (8 → 10, 영역 5/6 신규 추가, 9 → 11)
+
+---
+
+> ## 🔄 통합 수신 이력 — 2026-05-11
+>
+> **Backtesting 페이지 통합 삭제에 따라 2개 영역이 본 페이지로 이전되었습니다.**
+>
+> ### 변경 영역
+>
+> | 영역 | 변경 | 원본 |
+> |---|---|---|
+> | **영역 5 (NEW)** | 🆕 Regime 메트릭 자세한 비교 (FULL 기준) | Backtesting 영역 5 |
+> | **영역 6 (NEW)** | 🆕 Sub-events 분석 — 4 위기 (FULL 기준) | Backtesting 영역 6 |
+> | 영역 7-11 | 기존 5-9 → 영역 번호 +2 shift | (자체 변경) |
+>
+> ### 신규 와이어프레임 (영역 5/6 부분)
+>
+> ```
+>  4. Drawdown + Recovery Time
+>     ─────────────────────────────────────────────
+>  5. (NEW) Regime 메트릭 자세한 비교
+>     - 12 메트릭 × 5 Regime (R1/R2/R3/HoldOut/FULL)
+>     - ★ Best / 🔴 Worst Regime 강조 + Sortino 막대
+>     - FULL 기준 고정 (period 토글 영향 X)
+>     ─────────────────────────────────────────────
+>  6. (NEW) Sub-events 분석 — 4 위기
+>     - 2018 Q4 / COVID-19 / 2022 Bear / 2024 Sector Rotation
+>     - 위기별 Fund vs SPY Active Return + MDD + Recovery
+>     - FULL 기준 고정 (period 토글 영향 X)
+>     ─────────────────────────────────────────────
+>  7. VaR / CVaR 분포 (← 기존 5)
+> ```
+>
+> 자세한 설명은 `decisionlog/04_risk_metrics.md` 의 통합 수신 이력 박스 참조.
+
+---
+
+> ## 🔄 영역 7 (VaR / CVaR) 단순화 — 2026-05-11
+>
+> **월별 Tab 제거 → 일별 only.**
+>
+> 사유:
+> - 월별 (192 sample) 의 5% 분위수는 단 ~10개 → 통계 신뢰성 매우 낮음
+> - VaR 학술/실무 표준 = 일별 (Basel III, J.P. Morgan RiskMetrics)
+> - 분포 통계 (Performance 영역 9) + Tail Risk (영역 10) 와 일관성 — 꼬리/극단 메트릭 모두 일별
+>
+> 자세한 결정 이력은 `decisionlog/04_risk_metrics.md` 의 영역 7 단순화 박스 참조.
 
 ---
 
