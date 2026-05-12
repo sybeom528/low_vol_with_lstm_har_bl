@@ -68,6 +68,7 @@ final_pt/
 | 저변동 anomaly 검증 EDA | [ANOMALY_ANALYSIS.md](ANOMALY_ANALYSIS.md) |
 | Q·PCT 민감도 분석 (winner 슬롯) | [SENSITIVITY_ANALYSIS.md](SENSITIVITY_ANALYSIS.md) |
 | 학술 reference (Pyo & Lee 2018) | [Exploiting_LowRisk_Anomaly_BL_Summary.md](Exploiting_LowRisk_Anomaly_BL_Summary.md) |
+| Winner BL 슬롯 시계열 추이 (§8) | [WINNER_SLOT_TIMESERIES.md](WINNER_SLOT_TIMESERIES.md) |
 | 분석 노트북 셀 해설 | `05b_Analyze.ipynb` 안 markdown 셀 |
 
 ---
