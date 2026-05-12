@@ -76,7 +76,7 @@ def parse_config(cfg: dict) -> dict:
         'p_weight'   : p_wt,
         'q_mode'     : q_mode,
         'omega_mode' : om_mode,
-        'tc'         : cfg.get('tc',         0.003),
+        'tc'         : cfg.get('tc',         0.002),
         'max_weight' : cfg.get('max_weight', 0.10),
         # 약어 토큰
         'prior_s'    : pr_s,
