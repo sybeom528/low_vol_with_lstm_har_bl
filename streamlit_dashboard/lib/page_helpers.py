@@ -58,6 +58,14 @@ def render_page_header(page_name_en: str, page_name_ko: str) -> None:
     st.title(page_name_en)
     st.caption(page_name_ko)
 
+    # 사이드바 영역 검색 → 페이지 이동 시 highlight 안내 (2026-05-12 신규)
+    if "_highlight_area" in st.session_state:
+        st.info(
+            f"🔍 검색하신 영역: **{st.session_state['_highlight_area']}** "
+            f"— 페이지 내에서 동일한 이름의 섹션을 찾아 이동해 주십시오."
+        )
+        del st.session_state["_highlight_area"]
+
 
 def render_subheader(title_en: str, title_ko: str, description: str) -> None:
     """
@@ -146,6 +154,34 @@ def render_sidebar() -> None:
         #     Risk Metrics 페이지 영역 5/6 으로 이전.
         st.markdown("##### ── 메타 ──")
         st.page_link("pages/09_About.py", label="About / FAQ", icon="ℹ️")
+
+        st.divider()
+
+        # ── 영역 검색 (2026-05-12 신규) ──────────────────────────────
+        from lib.search_index import search_areas
+
+        st.markdown("##### 🔍 영역 검색")
+        query = st.text_input(
+            "키워드로 영역 찾기",
+            placeholder="예: var, 분포, sortino, regime, 시뮬레이션...",
+            key="_sidebar_search_query",
+            label_visibility="collapsed",
+        )
+        if query:
+            results = search_areas(query, max_results=8)
+            if results:
+                st.caption(f"검색 결과 {len(results)}개")
+                for i, r in enumerate(results):
+                    btn_label = f"📍 {r['page']} → {r['area']}"
+                    if st.button(
+                        btn_label,
+                        key=f"_sidebar_search_goto_{i}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["_highlight_area"] = r["area"]
+                        st.switch_page(r["page_file"])
+            else:
+                st.info("일치하는 영역이 없습니다.")
 
         st.divider()
 
