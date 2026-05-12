@@ -2,7 +2,7 @@
 
 > **저변동성 anomaly + LSTM σ 예측 + Black-Litterman 단일 view 프레임워크로 위험성향별 펀드 후보를 탐색하는 quant 프로젝트.**
 >
-> 최종 갱신: 2026-05-11
+> 최종 갱신: 2026-05-12
 
 ---
 
@@ -11,12 +11,12 @@
 ```
 1. Data Collection      ✅ 01_DataCollection.ipynb              — DATA_COLLECTION.md
 2. EDA (시계열)          ✅ 02a_EDA_Returns_Volatility.ipynb     — 수익률 예측 불가 / 변동성 예측 가능 증명
-2. EDA (횡단면)          ✅ 02b_Low_Risk_Anomaly.ipynb           — ANOMALY_ANALYSIS.md
+2. EDA (횡단면)          ✅ 02b_LowVol_PortfolioSort.ipynb           — ANOMALY_ANALYSIS.md
 3. LSTM HPO             ✅ 03a_LSTM_Optuna_GridSearch.ipynb     — V4_BEST_CONFIG 정당화 (Optuna 12-trial)
 3. LSTM σ 예측           ✅ 03b_Volatility_Forecasting.ipynb     — LSTM + HAR + Performance ensemble (617 종목 stockwise)
 4. Black-Litterman       ✅ 04_BL_Walkforward.ipynb (walk_forward)
 5. MVO + 위험성향 매핑    🟡 05b_Analyze.ipynb (분석 진행 중)
-6. 3-레짐 안정성 + 민감도  ✅ 05b_Analyze.ipynb (I/J/K/L/M/N)
+6. 3-레짐 안정성 + 민감도  ✅ 05b_Analyze.ipynb (I/J/K/M/N)
 7. Streamlit 대시보드     🟡 streamlit_dashboard/ (초안 진행 중)
 ```
 
@@ -28,11 +28,11 @@
 final_pt/
 ├── 01_DataCollection.ipynb            ← 데이터 수집 (S&P500 멤버십 + 가격 + 패널 + 보조)
 ├── 02a_EDA_Returns_Volatility.ipynb   ← 시계열 EDA (수익률 vs 변동성 예측성)
-├── 02b_Low_Risk_Anomaly.ipynb         ← 횡단면 EDA (저변동 anomaly 6단 검증)
+├── 02b_LowVol_PortfolioSort.ipynb         ← 횡단면 EDA (저변동 anomaly 6단 검증)
 ├── 03a_LSTM_Optuna_GridSearch.ipynb   ← HPO 보조 (12-trial Optuna → V4_BEST_CONFIG)
 ├── 03b_Volatility_Forecasting.ipynb   ← LSTM 학습 + HAR baseline + Diebold-Pauly ensemble
 ├── 07_Statistical_Validation.ipynb    ← 학술 통계 심화 분석
-├── 05a_05a_HMM_Regime.ipynb                   ← 3-레짐 HMM 분류
+├── 05a_HMM_Regime.ipynb                   ← 3-레짐 HMM 분류
 │
 ├── 04_BL_Walkforward.ipynb                       ← walk_forward 실행 → results/*.pkl
 ├── 05b_Analyze.ipynb                   ← 분석 (K_CUT → I → J → K → L → M → N)
@@ -40,7 +40,7 @@ final_pt/
 │
 ├── timeseries_lib.py                  ← 시계열·통계 함수 (LSTM, HAR-RV, ensemble, 통계 검정)
 ├── lstm_pipeline.py                   ← LSTM high-level orchestration (V4_BEST_CONFIG, walk_forward)
-├── bl_config.py                       ← EXPERIMENTS 정의 (156개)
+├── bl_config.py                       ← EXPERIMENTS 정의 (90개 매트릭스)
 ├── bl_functions.py                    ← BL 핵심 함수 (Σ/π/P/Q/Ω/BL/TC/Metrics)
 ├── master_table.py                    ← results/*.pkl → mt/rt 빌더
 ├── analyze_plots.py                   ← 시각화 모듈
@@ -48,7 +48,7 @@ final_pt/
 ├── _evidence/                         ← 03a Optuna 캐시 (lstm_optuna_v4/best_metrics.json)
 ├── data/                              ← 01 산출물 (monthly_panel, daily_returns, macro, FF 등)
 ├── data/03b_lstm/data/         ← 03b 산출물 (ensemble_predictions_stockwise.csv)
-├── results/                           ← 156 BL pkl
+├── results/                           ← 90 매트릭스 BL pkl (tc=0.002 baked-in)
 ├── outputs/                           ← 차트 PNG
 └── streamlit_dashboard/               ← Streamlit 앱 (초안)
 ```
@@ -64,7 +64,6 @@ final_pt/
 | 저변동 anomaly 검증 EDA | [ANOMALY_ANALYSIS.md](ANOMALY_ANALYSIS.md) |
 | Q·PCT 민감도 분석 (winner 슬롯) | [SENSITIVITY_ANALYSIS.md](SENSITIVITY_ANALYSIS.md) |
 | 학술 reference (Pyo & Lee 2018) | [Exploiting_LowRisk_Anomaly_BL_Summary.md](Exploiting_LowRisk_Anomaly_BL_Summary.md) |
-| 4차 LSTM 재학습 검증 | [_validation_report_2026_05_08.md](_validation_report_2026_05_08.md) |
 | 분석 노트북 셀 해설 | `05b_Analyze.ipynb` 안 markdown 셀 |
 
 ---
@@ -80,10 +79,10 @@ final_pt/
 - **03b** 617 종목 stockwise walk-forward (225 fold): LSTM 0.5185 / HAR 0.3914 / **Ensemble 0.3822** (Best ensemble 403 종목, 65.3%)
 
 ### BL 백테스트
-- **Top 후보** (sortino_ir 기준): `mcap_ls_eq_lam_pap` (Sharpe 1.140, CAGR 16.23%, MDD -14.68%)
-- **baseline 대비**: Sharpe +0.03, CAGR +2.7%p, MDD 비슷한 수준 유지
+- **Winner** (자동 식별: sortino_ir ≥ 10 필터 + 전체기간 sortino 1위): `mat_eq_eq_raw_pap` (Sharpe 1.096, Sortino 1.826, CAGR 16.2%, MDD -13.6%)
+- **baseline 대비** (`mat_mcap_mcap_fix_he`): Sharpe·Sortino·CAGR 모두 우위 + MDD 양호
 - **SPY 대비**: 모든 위험조정 지표에서 우위 (특히 위기 방어)
-- **Q 민감도**: q=0.003이 우리 setup의 robust optimum (BAB 학술값 0.0064는 단조 감소)
+- **Q 민감도**: q ∈ [0.001, 0.010] 전 구간에서 winner 와 통계적 동등 (Memmel JK z-test, p>0.5). BAB 학술값 0.0055/0.0064 도 동등 → 학술 정합
 - **레짐 안정성**: 3-레짐 (R1 회복 / R2 확장 / R3 변동) HMM 기반
 
 ---

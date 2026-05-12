@@ -5,7 +5,7 @@
 | 노트북 | 관점 | 결론 | 후속 연결 |
 |---|---|---|---|
 | **02a_EDA_Returns_Volatility** | 시계열 (SPY 단일자산) | 수익률 예측 X, 변동성 예측 O | → **03b LSTM 변동성 예측** 정당화 |
-| **02b_Low_Risk_Anomaly** | 횡단면 (S&P500 패널) | 저변동 = risk-adjusted 우위 | → **BL spread view** 정당화 |
+| **02b_LowVol_PortfolioSort** | 횡단면 (S&P500 패널) | 저변동 = risk-adjusted 우위 | → **BL spread view** 정당화 |
 
 본 문서는 주로 **02b** 의 검증 결과를 담는다. 02a 의 시계열 EDA 결과는 노트북 내 markdown 참조.
 
