@@ -6,8 +6,7 @@ lib/data_loader.py - 데이터 로딩 + Streamlit 캐싱 (D-3)
 
 경로:
   - 모듈 위치 기준 절대 경로 사용 (cwd 무관 동작)
-  - 핵심 데이터: streamlit_dashboard/data/ (사본)
-  - Sensitivity Test: final/results/ (원본 직접 참조, 156 config 중 필요 시)
+  - 모든 데이터: streamlit_dashboard/data/ (완전 독립 사본)
 
 참조: docs/plan/02_common.md 2절, docs/plan/01_setup.md 2.3절
 """
@@ -26,8 +25,6 @@ import streamlit as st
 DASHBOARD_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = DASHBOARD_DIR / "data"
 RESULTS_DIR = DATA_DIR / "results"
-PROJECT_ROOT = DASHBOARD_DIR.parent
-ORIGINAL_RESULTS_DIR = PROJECT_ROOT / "final" / "results"
 
 
 # === GICS 11 섹터 정합화 (sector name normalization) ==================
@@ -265,7 +262,7 @@ def load_fund_results(
 
     config 차원: prior=capm_eq / p_weight=eq / q_mode=raw_lam / omega_mode=ff3_paper
 
-    대시보드 사본 (Top 1) 우선, 없으면 final 원본 fallback.
+    대시보드 사본 (streamlit_dashboard/data/results/) 에서 로드.
 
     ── TC override (2026-05-12, 안전망 역할로 유지) ──────────────────────
     [도입 시점 narrative]
@@ -308,18 +305,12 @@ def load_fund_results(
               "spy_ret": Series (NaN 보강), "comp": DataFrame, "config": dict (갱신), ...}
     """
     local = RESULTS_DIR / f"{config_name}.pkl"
-    if local.exists():
-        with open(local, "rb") as f:
-            d = pickle.load(f)
-    else:
-        original = ORIGINAL_RESULTS_DIR / f"{config_name}.pkl"
-        if not original.exists():
-            raise FileNotFoundError(
-                f"Config '{config_name}' pkl 을 찾을 수 없습니다.\n"
-                f"  확인한 경로:\n  - {local}\n  - {original}"
-            )
-        with open(original, "rb") as f:
-            d = pickle.load(f)
+    if not local.exists():
+        raise FileNotFoundError(
+            f"Config '{config_name}' pkl 을 찾을 수 없습니다: {local}"
+        )
+    with open(local, "rb") as f:
+        d = pickle.load(f)
 
     # TC override — 의도된 보수적 가정 (편측 20bp) 으로 net 재산출
     if tc_override is not None:
@@ -354,28 +345,6 @@ def load_fund_results(
     return d
 
 
-@st.cache_data
-def load_other_config_results(config_name: str) -> dict:
-    """
-    다른 155 config 결과 — Backtesting 영역 6 / model-comparison 등.
-    load_fund_results 와 동일한 fallback (사본 우선 → final 원본).
-    """
-    return load_fund_results(config_name)
-
-
-@st.cache_data
-def list_available_configs() -> list[str]:
-    """
-    streamlit_dashboard/data/results/ 의 모든 config pkl 이름 list.
-    부재 시 final/results/ fallback. Backtesting 페이지 영역 6 sensitivity 사용.
-    """
-    if RESULTS_DIR.exists():
-        names = sorted(p.stem for p in RESULTS_DIR.glob("*.pkl") if p.is_file())
-        if names:
-            return names
-    if ORIGINAL_RESULTS_DIR.exists():
-        return sorted(p.stem for p in ORIGINAL_RESULTS_DIR.glob("*.pkl") if p.is_file())
-    return ["mat_eq_eq_raw_pap"]  # fallback
 
 
 # === Baseline 산출 (Overview 영역 3 비교 라인) ========================
