@@ -28,7 +28,7 @@ from plotly.subplots import make_subplots
 
 from lib import metric_calculators as mc
 from lib.colors import COLORS, SECTOR_COLORS
-from lib.data_loader import EVAL_PERIODS
+from lib.data_loader import EVAL_PERIODS, compute_fwd_log_rv, load_daily_returns
 from lib.plot_helpers import add_event_annotations, add_regime_backgrounds
 
 
@@ -601,52 +601,61 @@ def render_ho_justification(
     )
     st.divider()
 
-    # === 3. Chart 2 (신규 2026-05-12): IT 섹터 변동성 − 시장 평균 차이 ===
-    # 본 펀드의 LSTM 기반 변동성 인지 운용 → IT under-weight 의 학술적 근거.
-    # 두 라인 비교 대신 "차이 (Spread)" 시계열로 IT 가 시장 대비 얼마나 더 변동성이 큰지 직관 표현.
-    st.markdown("##### Chart 2 — IT 섹터 변동성 − 시장 평균 (Spread, %p)")
+    # === 3. Chart 2 (2026-05-13 정정): IT 섹터 forward log-RV − 시장 평균 ===
+    # LSTM 신경망의 예측 target 변수와 정확히 동일한 산식 사용 (forward 21d log-RV).
+    # final/lstm_pipeline.py:179-182 의 target_logrv 산식 그대로 재현.
+    st.markdown("##### Chart 2 — IT 섹터 vs 시장 변동성 (LSTM 예측 변수)")
 
-    it_avg_vol = (
-        panel[panel["gics_sector"] == "Information Technology"]
-        .groupby("date")["vol_60d"].mean()
+    # LSTM target 산식: log(rolling(21).std(log_ret)).shift(-21)
+    daily_returns = load_daily_returns()
+    fwd_log_rv = compute_fwd_log_rv(daily_returns, horizon=21)  # date × ticker
+
+    # panel 의 월말 dates 만 추출 후 stack → panel.merge 효율화
+    monthly_dates = sorted(panel["date"].unique())
+    fwd_at_monthly = fwd_log_rv.reindex(monthly_dates, method="ffill")
+    fwd_long = fwd_at_monthly.stack().rename("fwd_log_rv").reset_index()
+    fwd_long.columns = ["date", "ticker", "fwd_log_rv"]
+    panel_enriched = panel.merge(fwd_long, on=["date", "ticker"], how="left")
+
+    it_avg_logrv = (
+        panel_enriched[panel_enriched["gics_sector"] == "Information Technology"]
+        .groupby("date")["fwd_log_rv"].mean()
     )
-    market_avg_vol = panel.groupby("date")["vol_60d"].mean()
+    market_avg_logrv = panel_enriched.groupby("date")["fwd_log_rv"].mean()
 
-    # 펀드 운용 기간 (2010-01 이후) 만
+    # 펀드 운용 기간 + 우측 NaN (forward 데이터 부재) 제거
     fund_start = pd.Timestamp("2010-01-01")
-    it_avg_vol = it_avg_vol[it_avg_vol.index >= fund_start]
-    market_avg_vol = market_avg_vol[market_avg_vol.index >= fund_start]
+    common_idx = it_avg_logrv.index.intersection(market_avg_logrv.index)
+    vol_spread = (
+        (it_avg_logrv.loc[common_idx] - market_avg_logrv.loc[common_idx])
+        .dropna()
+    )
+    vol_spread = vol_spread[vol_spread.index >= fund_start]
 
-    # IT − 시장 차이 (%p)
-    common_idx = it_avg_vol.index.intersection(market_avg_vol.index)
-    vol_spread = (it_avg_vol.loc[common_idx] - market_avg_vol.loc[common_idx]) * 100  # %p
-
-    # Hold Out 기간 평균 + 전체 평균 (caption 용)
+    # Hold Out 기간 평균 + 전체 평균 (caption / expander 용)
     ho_start_dt = pd.Timestamp(EVAL_PERIODS["HOLD_OUT"][0])
     ho_gap = float(vol_spread[vol_spread.index >= ho_start_dt].mean())
     full_gap = float(vol_spread.mean())
 
     fig_v = go.Figure()
-    # 양수 영역 채움 (IT > 시장 — under-weight 정당화 영역)
+    # 양수 영역 채움 (IT > 시장)
     fig_v.add_trace(go.Scatter(
         x=vol_spread.index, y=vol_spread.values,
-        name="IT − 시장 변동성 차이",
+        name="IT − 시장 변동성 차이 (log-RV)",
         line=dict(color=COLORS["accent_red"], width=2.5),
         fill="tozeroy",
-        fillcolor="rgba(239, 68, 68, 0.18)",  # accent_red with alpha
-        hovertemplate="%{x|%Y-%m}<br>차이: %{y:+.2f}%p<extra></extra>",
+        fillcolor="rgba(239, 68, 68, 0.18)",
+        hovertemplate="%{x|%Y-%m}<br>log-RV 차이: %{y:+.3f}<extra></extra>",
     ))
-    # 0 기준선 (시장 평균과 동일한 변동성 수준)
     fig_v.add_hline(
         y=0, line_dash="solid",
         line_color=COLORS["text_muted"], line_width=1.2,
         annotation_text="시장 평균", annotation_position="bottom right",
     )
-    # 전체 평균선
     fig_v.add_hline(
         y=full_gap, line_dash="dash",
         line_color=COLORS["accent_amber"], line_width=1,
-        annotation_text=f"16년 평균 +{full_gap:.2f}%p",
+        annotation_text=f"16년 평균 +{full_gap:.3f}",
         annotation_position="top right",
     )
     fig_v = add_regime_backgrounds(fig_v, with_labels=False)
@@ -655,20 +664,57 @@ def render_ho_justification(
         template="plotly_dark",
         paper_bgcolor=COLORS["background"], plot_bgcolor=COLORS["background"],
         font_color=COLORS["text"],
-        xaxis_title="시점", yaxis_title="변동성 차이 (%p) — IT 평균 − 시장 평균",
+        xaxis_title="시점", yaxis_title="log-RV 차이 (IT − 시장)",
         height=380, hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     st.plotly_chart(fig_v, use_container_width=True)
+
+    # 일반 사용자용 짧은 caption — 차트 흐름으로 직관적 이해
     st.caption(
-        f"IT 섹터 평균 변동성이 시장 평균보다 **일관되게 높음** "
-        f"(거의 항상 0 위 = 빨간 영역). "
-        f"**전체 평균 +{full_gap:.2f}%p**, **Hold Out 24개월 평균 +{ho_gap:.2f}%p** "
-        f"(Hold Out 시기에 차이 ↑ — IT 변동성이 시장보다 더 spike). "
-        f"본 펀드는 **LSTM 변동성 예측** 기반 운용 → 변동성 큰 종목/섹터에 낮은 confidence → "
-        f"**IT under-weight 의 학술적 근거**. "
-        f"다만 AI Rally 시기 IT 가 변동성에도 불구하고 큰 상승 → **변동성 ≠ 수익** 의 단기 trade-off."
+        "**IT 섹터 변동성이 시장보다 일관되게 큼** (빨간 영역 = IT 가 시장보다 더 출렁임). "
+        "본 펀드의 AI 모델 (LSTM) 은 이런 변동성 큰 섹터의 비중을 줄여 운용 → IT 적게 담음. "
+        "단, AI Rally 시기 IT 가 급등 → 변동성과 수익이 분리되는 단기 trade-off 발생."
     )
+
+    with st.expander("ℹ️ 이 변동성 지표는 무엇을 의미하나요?"):
+        st.markdown(
+            f"""
+            **무엇을 측정하나요?**
+            본 차트의 변동성은 **앞으로 1개월 (약 21 영업일) 동안 종목 가격이 얼마나 출렁일지** 의 측정치입니다.
+            본 펀드의 AI 모델 (LSTM 신경망) 이 매월 예측하려고 하는 **바로 그 값과 동일한 정의**를 사용합니다.
+
+            **왜 "앞으로 1개월" 인가요?**
+            - 본 펀드는 매월 말 종목 비중을 재조정하므로, **다음 한 달간 어떤 종목이 더 출렁일지** 를 미리 알수록 좋은 운용이 가능합니다.
+            - 본 차트는 이미 지나간 과거 데이터로 **그때 실제로 얼마나 출렁였는지** 를 보여줍니다 — 즉, AI 모델이 매 시점 예측하려고 했던 그 값의 **실제 결과** 입니다.
+
+            **Y축 (변동성 차이) 을 어떻게 읽나요?**
+            - **0 위 (빨간 영역)**: IT 섹터가 시장 평균보다 더 출렁임 → 본 펀드는 비중을 줄임
+            - **0 아래**: IT 섹터가 시장 평균보다 덜 출렁임 (드문 케이스)
+            - 숫자가 클수록 격차도 큼
+
+            대략 이렇게 환산해서 이해하실 수 있습니다:
+
+            | Y축 값 | IT 가 시장보다 얼마나 더 출렁이는가 |
+            |---|---|
+            | +0.10 | 약 10.5% 더 |
+            | +0.20 | 약 22% 더 |
+            | +0.30 | 약 35% 더 |
+
+            **수치 요약**
+            - **16년 평균: +{full_gap:.3f}** → IT 가 시장보다 약 **{(np.exp(full_gap) - 1) * 100:+.1f}%** 더 변동적
+            - **Hold Out 24개월 평균 (2024-2025): +{ho_gap:.3f}** → 약 **{(np.exp(ho_gap) - 1) * 100:+.1f}%** (AI Rally 시기 격차 ↑)
+
+            **왜 "log" 단위인가요?**
+            금융 학계 / 실무 표준 단위입니다 (Andersen & Bollerslev 1998). 일반 % 단위와 달리 **변동성의 비율 관계** 가 자연스럽게 보존되어,
+            AI 모델이 학습 / 예측하기에 가장 적합한 형태로 변환된 값입니다.
+
+            **데이터 출처 / 표시 범위**
+            - 출처: 시장 일별 가격 데이터 (yfinance) 의 각 종목 로그 수익률
+            - 본 펀드 운용 시작 시점 (2010-01) 이후
+            - 차트 우측 끝은 "미래 1개월 데이터" 가 아직 부재해 약 1개월 truncate
+            """
+        )
     st.divider()
 
     # === 4. Chart 3: HO 24m Sector Contribution Tornado ===
