@@ -92,7 +92,7 @@ final_pt/
 | `q_value` | float | `0.003` | Q 값(또는 base scaling) |
 | `lam_mean` | float | `2.5` | λ 정규화 기준값 |
 | `omega_mode` | `he_litterman` / `ff3_paper` | `he_litterman` | Ω 계산 방식 |
-| `tc` | float | `0.003` | 편측(per-side) 거래비용 (30bp). turnover=Σ\|Δw\|∈[0,2]이라 TC = turnover×tc로 매수+매도 동시 반영 |
+| `tc` | float | `0.002` | 편측(per-side) 거래비용 (20bp). turnover=Σ\|Δw\|∈[0,2]이라 TC = turnover×tc로 매수+매도 동시 반영 |
 | `max_weight` | float | `0.10` | 단일 종목 상한 |
 | `lstm_pred_path` | str | 자동 탐색 | LSTM 예측 파일 경로 |
 
@@ -302,7 +302,7 @@ rm final_pt/results/{name}.pkl
 | **Look-ahead bias** | `fwd_ret_1m`은 평가 전용. BL 입력에 절대 사용 금지 |
 | **LSTM 학습** | Phase3에서 walk-forward 사전 생성. 재학습 시 GPU + 수 시간 |
 | **rp 가중방식** | Pyo & Lee 2018 — 30% 선별 후 그룹 내 1/σ 가중 |
-| **거래비용 단위** | `tc=0.003` = 편측(per-side) 30bp. turnover는 two-way Σ\|Δw\|∈[0,2]이므로 월 TC = `turnover × tc`가 매수+매도 비용 모두 반영 |
+| **거래비용 단위** | `tc=0.002` = 편측(per-side) 20bp. turnover는 two-way Σ\|Δw\|∈[0,2]이므로 월 TC = `turnover × tc`가 매수+매도 비용 모두 반영 |
 | **데이터 선행** | `01_DataCollection.ipynb` 실행 후 `data/` 채워진 상태에서 실행 |
 | **monthly_cache** | `04_BL_Walkforward` cell-cache에서 빌드 — 모든 슬롯 공유 (Σ/mcap/spy 등) |
 | **vol_pred 단위** | `np.exp(y_pred_ensemble) × √252` 로 연환산. 일별/연환산 혼합 시 P 랭킹 왜곡 (bl_runner `get_vol_series` 에 guard) |
