@@ -37,6 +37,7 @@ from bl_functions import (
     build_P,
     compute_Q_fixed, compute_Q_lambda, compute_Q_inv_lambda,
     compute_Q_raw_lam, compute_Q_vol_spread,
+    compute_Q_ff3_paper_mean,
     compute_omega_he,
     black_litterman, optimize_portfolio,
     compute_turnover, apply_tc,
@@ -80,25 +81,27 @@ def _compute_spy_fwd_21d(pred_date: pd.Timestamp,
 
 
 # ════════════════════════════════════════════════════════════════
-# 1. LSTM 예측 로드
+# 1. 예측 CSV 로더 (LSTM / ANN 공용 — 동일 스키마: date, ticker, y_true, y_pred_ensemble)
 # ════════════════════════════════════════════════════════════════
-def load_lstm_pred(
-    lstm_path: str | Path,
+def load_pred_csv(
+    csv_path: str | Path,
     pred_dates: pd.DatetimeIndex,
 ) -> Dict:
-    """
-    LSTM 예측 csv 로드 → vol_pred 연환산 + 월별 피벗 + (date, ticker) 인덱스.
+    """예측 csv 로드 → vol_pred 연환산 + 월별 피벗 + (date, ticker) 인덱스.
+
+    LSTM/ANN 동일 스키마 사용:
+        date, ticker, y_true, y_pred_ensemble   # y_pred_ensemble = log(daily_std)
 
     Returns dict:
         - 'available': bool
         - 'preds': DataFrame indexed by (date, ticker)
-        - 'monthly': DataFrame pivot (pred_date × ticker, value=vol_pred)
+        - 'monthly': DataFrame pivot (pred_date × ticker, value=vol_pred [연환산])
     """
-    lstm_path = Path(lstm_path)
-    if not lstm_path.exists():
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
         return {'available': False, 'preds': None, 'monthly': None}
 
-    raw = pd.read_csv(lstm_path, parse_dates=['date'])
+    raw = pd.read_csv(csv_path, parse_dates=['date'])
     # 단위: log-daily-RV → 연환산 vol (vol_21d 와 같은 단위)
     raw['vol_pred'] = np.exp(raw['y_pred_ensemble']) * np.sqrt(252)
     raw['abs_err']  = (raw['y_pred_ensemble'] - raw['y_true']).abs()
@@ -117,6 +120,10 @@ def load_lstm_pred(
     return {'available': True, 'preds': preds, 'monthly': monthly}
 
 
+# 하위호환 alias
+load_lstm_pred = load_pred_csv
+
+
 # ════════════════════════════════════════════════════════════════
 # 2. Dispatcher 함수 (config → 분기)
 # ════════════════════════════════════════════════════════════════
@@ -125,23 +132,41 @@ def get_vol_series(
     month_df: pd.DataFrame,
     pred_date: pd.Timestamp,
     lstm_monthly: Optional[pd.DataFrame],
+    ann_monthly: Optional[pd.DataFrame] = None,
 ) -> pd.Series:
-    """P 행렬에 쓸 변동성 시리즈 반환 — LSTM 예측 단일 옵션."""
-    if lstm_monthly is None:
-        raise RuntimeError(
-            'LSTM 예측 데이터가 없습니다. '
-            '03b_Volatility_Forecasting.ipynb 를 먼저 실행하세요.'
+    """P 행렬에 쓸 변동성 시리즈 반환.
+
+    p_mode 분기:
+        - 'lstm_predicted' (기본): LSTM 예측 사용
+        - 'ann_predicted'        : ANN (Pyo & Lee 2018 baseline) 예측 사용
+    """
+    p_mode = cfg.get('p_mode', 'lstm_predicted')
+    if p_mode == 'lstm_predicted':
+        source = lstm_monthly
+        label  = 'LSTM'
+    elif p_mode == 'ann_predicted':
+        source = ann_monthly
+        label  = 'ANN'
+    else:
+        raise ValueError(
+            f'p_mode={p_mode!r} 미지원 (lstm_predicted 또는 ann_predicted)'
         )
-    if pred_date not in lstm_monthly.index:
+
+    if source is None:
+        raise RuntimeError(
+            f'{label} 예측 데이터가 없습니다. '
+            f'(03b LSTM / paper_ann_predictions.csv 생성 확인)'
+        )
+    if pred_date not in source.index:
         # 예측 부재 월은 vol_21d 로 fallback (드물게 발생)
         return month_df['vol_21d']
 
-    pred_slice = lstm_monthly.loc[pred_date].dropna()
+    pred_slice = source.loc[pred_date].dropna()
 
     # 단위 가드: vol_21d 는 연환산. pred_slice 도 연환산이어야 함.
     if len(pred_slice) > 0 and pred_slice.median() < 0.05:
         raise ValueError(
-            f'LSTM pred_slice가 일별 단위로 의심됩니다 '
+            f'{label} pred_slice가 일별 단위로 의심됩니다 '
             f'(median={pred_slice.median():.4f} < 0.05). '
             f'`× np.sqrt(252)` 누락되지 않았는지 vol_pred 산출 코드 확인 필요.'
         )
@@ -178,8 +203,16 @@ def get_Q(
     pred_date: pd.Timestamp, lstm_monthly: Optional[pd.DataFrame],
     pct_group: float = 0.30,
     lam: float = 2.5, spy_excess: float = 0.0, sigma2_mkt: float = 0.001,
+    valid_tix: Optional[list] = None,
+    ret_pivot: Optional[pd.DataFrame] = None,
+    ff3: Optional[pd.DataFrame] = None,
+    rf_series: Optional[pd.Series] = None,
 ) -> float:
-    """Q 값 반환."""
+    """Q 값 반환.
+
+    `ff3_paper_mean` 모드는 추가로 `valid_tix`, `ret_pivot`, `ff3`, `rf_series` 가
+    필요. 기타 모드는 None 으로 전달해도 무방.
+    """
     mode = cfg.get('q_mode', 'fixed')
 
     if mode == 'fixed':
@@ -219,6 +252,24 @@ def get_Q(
 
         return compute_Q_vol_spread(P, vol_pred_curr,
                                      cfg.get('q_value', 0.003), spread_ref)
+
+    elif mode == 'ff3_paper_mean':
+        # 60개월 FF3 평균을 다음달 기대치로 사용 (Fama-MacBeth 1973, Cochrane 2005)
+        # Look-ahead 없음: train_dates 는 [idx-60 : idx], pred_date 미포함.
+        if ret_pivot is None or ff3 is None or rf_series is None or valid_tix is None:
+            raise ValueError(
+                'q_mode=ff3_paper_mean 는 valid_tix, ret_pivot, ff3, rf_series 가 필요.'
+                ' walk_forward 호출 시 인자로 전달하세요.'
+            )
+        thresh_m   = int(len(train_dates) * 0.7)
+        monthly_sl = ret_pivot.reindex(index=train_dates, columns=valid_tix
+                                       ).dropna(axis=1, thresh=thresh_m)
+        ff3_train  = ff3.reindex(train_dates)
+        rf_train   = rf_series.reindex(train_dates)
+        return compute_Q_ff3_paper_mean(
+            P.reindex(monthly_sl.columns).fillna(0),
+            monthly_sl, ff3_train, rf_train,
+        )
 
     else:
         raise ValueError(f'q_mode={mode!r} 미지원')
@@ -318,9 +369,19 @@ def walk_forward(
     tau: float = 0.1,
     pct_group: float = 0.30,
     verbose: bool = True,
+    ann_state: Optional[Dict] = None,
+    ret_pivot: Optional[pd.DataFrame] = None,
+    ff3: Optional[pd.DataFrame] = None,
+    rf_series: Optional[pd.Series] = None,
 ) -> Dict:
     """
     한 슬롯의 walk-forward 백테스트 → result dict.
+
+    추가 인자 (선택):
+        ann_state   : load_pred_csv(paper_ann_predictions.csv) 결과. p_mode='ann_predicted' 슬롯용.
+        ret_pivot   : panel['ret_1m'].unstack('ticker'). q_mode='ff3_paper_mean' 슬롯용.
+        ff3         : FF3 월별 ('mkt_rf','smb','hml','rf'). q_mode='ff3_paper_mean' 슬롯용.
+        rf_series   : 월별 rf. q_mode='ff3_paper_mean' 슬롯용.
 
     Returns:
         'config', 'ret', 'gross_ret', 'spy_ret',
@@ -331,6 +392,7 @@ def walk_forward(
     max_w    = cfg.get('max_weight', 0.10)
     p_weight = cfg.get('p_weight', 'mcap')
     lstm_monthly = lstm_state.get('monthly') if lstm_state else None
+    ann_monthly  = ann_state.get('monthly')  if ann_state  else None
 
     ret_list, comp_list, meta_list = [], [], []
     spy_list, err_list = [], []
@@ -366,7 +428,7 @@ def walk_forward(
                                        vol=month_df['vol_21d'])
             pi, lam = compute_pi(Sigma, w_mkt, spy_excess, sigma2_mkt)
 
-            vol_series = get_vol_series(cfg, month_df, pred_date, lstm_monthly)
+            vol_series = get_vol_series(cfg, month_df, pred_date, lstm_monthly, ann_monthly)
             P = build_P(
                 vol_series.reindex(valid_tix).fillna(vol_series.median()),
                 mcap, pct=cfg.get('pct_group', pct_group), weighting=p_weight)
@@ -375,7 +437,9 @@ def walk_forward(
                      if sigma2_mkt > 1e-10 else 2.5)
             Q = get_Q(cfg, P, train_dates, pred_date, lstm_monthly,
                       pct_group=pct_group,
-                      lam=lam_q, spy_excess=spy_excess, sigma2_mkt=sigma2_mkt)
+                      lam=lam_q, spy_excess=spy_excess, sigma2_mkt=sigma2_mkt,
+                      valid_tix=valid_tix,
+                      ret_pivot=ret_pivot, ff3=ff3, rf_series=rf_series)
 
             # ff3_paper omega: 직전월 예측오차² 적응형 Bayesian
             if cfg.get('omega_mode') == 'ff3_paper':

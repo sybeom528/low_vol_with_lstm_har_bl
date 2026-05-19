@@ -206,6 +206,66 @@ def compute_Q_vol_spread(
 
 
 
+
+def compute_Q_ff3_paper_mean(
+    P: pd.Series,
+    ret_matrix: pd.DataFrame,
+    ff3_train: pd.DataFrame,
+    rf_train: pd.Series,
+) -> float:
+    """
+    논문 방식 Q (학계 표준 변형 — long-run mean reversion).
+
+    X_next = 훈련 윈도우(60개월) FF3 팩터 평균 → 종목별 OLS 적합 후 시점 t+1 기대수익 합성.
+    Fama-MacBeth (1973), Cochrane (2005) 표준. 월별 팩터는 σ/μ ≈ 8~15 라
+    직전월 random walk 예측 노이즈가 큼 — 장기 평균을 다음달 기대 프리미엄으로 사용.
+
+    rf_next 는 변동성 작은 이자율이라 train 마지막 시점 그대로 사용.
+
+    Look-ahead bias 없음 — 모든 입력 (`ret_matrix`, `ff3_train`, `rf_train`) 은
+    caller 가 train_dates (pred_date 미포함) 로 reindex 한 후 전달. 함수 내부에서는
+    train window 내 데이터만 사용.
+    """
+    if P.index.duplicated().any():
+        P = P[~P.index.duplicated(keep='first')]
+    if ret_matrix.columns.duplicated().any():
+        ret_matrix = ret_matrix.loc[:, ~ret_matrix.columns.duplicated(keep='first')]
+    if ret_matrix.index.duplicated().any():
+        ret_matrix = ret_matrix[~ret_matrix.index.duplicated(keep='first')]
+
+    view_tickers = P[P != 0].index.intersection(ret_matrix.columns).tolist()
+    if not view_tickers:
+        return 0.003
+
+    ff3_aligned = ff3_train.reindex(ret_matrix.index).dropna()
+    rf_aligned  = rf_train.reindex(ff3_aligned.index).fillna(0)
+    n = len(ff3_aligned)
+    if n < 24:
+        return 0.003
+
+    X      = np.column_stack([np.ones(n), ff3_aligned[['mkt_rf', 'smb', 'hml']].values])
+    X_next = np.array([
+        1.0,
+        float(ff3_aligned['mkt_rf'].mean()),
+        float(ff3_aligned['smb'].mean()),
+        float(ff3_aligned['hml'].mean()),
+    ])
+    rf_next = float(rf_train.iloc[-1]) if len(rf_train) > 0 else 0.0
+
+    r_hat_next = pd.Series(0.0, index=ret_matrix.columns)
+    for t in view_tickers:
+        y = ret_matrix[t].reindex(ff3_aligned.index) - rf_aligned
+        valid = y.notna()
+        if valid.sum() < 12:
+            continue
+        coef = np.linalg.lstsq(X[valid], y[valid].values, rcond=None)[0]
+        r_hat_next[t] = float(X_next @ coef) + rf_next
+
+    P_vec = P.reindex(ret_matrix.columns).fillna(0)
+    return float(P_vec @ r_hat_next)
+
+
+
 # ══════════════════════════════════════════════════════════════
 # 5. OMEGA — 뷰 불확실성
 # ══════════════════════════════════════════════════════════════

@@ -5,10 +5,10 @@ bl_config.py — Black-Litterman 실험 정의
   - 기존 방식의 파라미터만 바꿀 때 → EXPERIMENTS에 dict 한 줄 추가
   - 새 계산 방식 도입 시 → bl_functions.py에 함수 추가 + 여기에 dict + 04_BL_Walkforward dispatcher에 분기
 
-슬롯 키 정리 (2026-05-11 갱신):
-  p_mode    : 'lstm_predicted'  # 단일 옵션 — trailing 옵션은 2026-05-11 제거됨
+슬롯 키 정리 (2026-05-11 갱신, 2026-05-16 ff3_paper_mean 추가):
+  p_mode    : 'lstm_predicted' | 'ann_predicted'   # ANN 슬롯은 bl_config_ann.py 참조
   p_weight  : 'mcap' | 'eq' | 'rp'
-  q_mode    : 'fixed' | 'lambda' | 'raw_lam' | 'inv_lambda' | 'vol_spread'
+  q_mode    : 'fixed' | 'lambda' | 'raw_lam' | 'inv_lambda' | 'vol_spread' | 'ff3_paper_mean'
   q_value   : float  (q_mode='fixed' 또는 동적 모드 base, 기본 0.003)
   lam_mean  : float  (q_mode='lambda'|'raw_lam'|'inv_lambda' 일 때 기준 λ, 기본 2.5)
   omega_mode: 'he_litterman' | 'ff3_paper'
@@ -26,6 +26,14 @@ bl_config.py — Black-Litterman 실험 정의
   - omega_mode: rmse 제거 (LSTM RMSE 의존성 단순화) → he_litterman/ff3_paper 만 (45 슬롯 삭제)
   - 최종: 매트릭스 90 슬롯 (winner_q/pct sweep 은 05b_Analyze 에서 in-code 처리)
   - 모든 슬롯이 LSTM 예측 변동성 (03b ensemble_predictions_stockwise.csv) 사용
+
+⚠ 변경 이력 (2026-05-16, 학술지 제출 준비):
+  - q_mode: ff3_paper_mean 추가 (60개월 FF3 평균 회귀, Fama-MacBeth 1973 표준)
+    → 18 슬롯 추가 (3 prior × 3 p_weight × 1 q × 2 omega), LSTM 매트릭스 90 → 108
+  - ANN 베이스라인 (Pyo & Lee 2018) 추가: bl_config_ann.py 참조 (108 미러 슬롯)
+  - 데이터 의존성: data/03b_lstm/data/ensemble_predictions_stockwise.csv (LSTM)
+                  data/paper_ann_predictions.csv (ANN)
+                  data/ff3_monthly.csv (q_mode='ff3_paper_mean' 회귀 입력)
 """
 from pathlib import Path
 
@@ -174,6 +182,40 @@ EXPERIMENTS = [
     {**BASELINE, 'name': 'mat_rp_rp_inv_pap', 'p_weight': 'rp', 'q_mode': 'inv_lambda', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp', 'lam_mean': 2.5},
     {**BASELINE, 'name': 'mat_rp_rp_vsp_he', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'prior': 'capm_rp'},
     {**BASELINE, 'name': 'mat_rp_rp_vsp_pap', 'p_weight': 'rp', 'q_mode': 'vol_spread', 'omega_mode': 'ff3_paper', 'prior': 'capm_rp'},
+
+    # ═══════════════════════════════════════════════════════════════
+    # [9] ff3_paper_mean 신축 (2026-05-16 추가) — 60개월 FF3 평균 회귀 Q
+    #     X_next = ff3_aligned.mean() (Fama-MacBeth 1973 / Cochrane 2005 표준).
+    #     learning windows 60mo, look-ahead 없음 (train_dates 만 사용).
+    #     3 prior × 3 p_weight × 1 q × 2 omega = 18 슬롯
+    # ═══════════════════════════════════════════════════════════════
+    # prior=mcap × pw=mcap
+    {**BASELINE, 'name': 'mat_mcap_mcap_fpm_he',  'q_mode': 'ff3_paper_mean'},
+    {**BASELINE, 'name': 'mat_mcap_mcap_fpm_pap', 'q_mode': 'ff3_paper_mean', 'omega_mode': 'ff3_paper'},
+    # prior=mcap × pw=eq
+    {**BASELINE, 'name': 'mat_mcap_eq_fpm_he',    'p_weight': 'eq', 'q_mode': 'ff3_paper_mean'},
+    {**BASELINE, 'name': 'mat_mcap_eq_fpm_pap',   'p_weight': 'eq', 'q_mode': 'ff3_paper_mean', 'omega_mode': 'ff3_paper'},
+    # prior=mcap × pw=rp
+    {**BASELINE, 'name': 'mat_mcap_rp_fpm_he',    'p_weight': 'rp', 'q_mode': 'ff3_paper_mean'},
+    {**BASELINE, 'name': 'mat_mcap_rp_fpm_pap',   'p_weight': 'rp', 'q_mode': 'ff3_paper_mean', 'omega_mode': 'ff3_paper'},
+    # prior=eq × pw=mcap
+    {**BASELINE, 'name': 'mat_eq_mcap_fpm_he',    'prior': 'capm_eq', 'q_mode': 'ff3_paper_mean'},
+    {**BASELINE, 'name': 'mat_eq_mcap_fpm_pap',   'prior': 'capm_eq', 'q_mode': 'ff3_paper_mean', 'omega_mode': 'ff3_paper'},
+    # prior=eq × pw=eq
+    {**BASELINE, 'name': 'mat_eq_eq_fpm_he',      'prior': 'capm_eq', 'p_weight': 'eq', 'q_mode': 'ff3_paper_mean'},
+    {**BASELINE, 'name': 'mat_eq_eq_fpm_pap',     'prior': 'capm_eq', 'p_weight': 'eq', 'q_mode': 'ff3_paper_mean', 'omega_mode': 'ff3_paper'},
+    # prior=eq × pw=rp
+    {**BASELINE, 'name': 'mat_eq_rp_fpm_he',      'prior': 'capm_eq', 'p_weight': 'rp', 'q_mode': 'ff3_paper_mean'},
+    {**BASELINE, 'name': 'mat_eq_rp_fpm_pap',     'prior': 'capm_eq', 'p_weight': 'rp', 'q_mode': 'ff3_paper_mean', 'omega_mode': 'ff3_paper'},
+    # prior=rp × pw=mcap
+    {**BASELINE, 'name': 'mat_rp_mcap_fpm_he',    'prior': 'capm_rp', 'q_mode': 'ff3_paper_mean'},
+    {**BASELINE, 'name': 'mat_rp_mcap_fpm_pap',   'prior': 'capm_rp', 'q_mode': 'ff3_paper_mean', 'omega_mode': 'ff3_paper'},
+    # prior=rp × pw=eq
+    {**BASELINE, 'name': 'mat_rp_eq_fpm_he',      'prior': 'capm_rp', 'p_weight': 'eq', 'q_mode': 'ff3_paper_mean'},
+    {**BASELINE, 'name': 'mat_rp_eq_fpm_pap',     'prior': 'capm_rp', 'p_weight': 'eq', 'q_mode': 'ff3_paper_mean', 'omega_mode': 'ff3_paper'},
+    # prior=rp × pw=rp
+    {**BASELINE, 'name': 'mat_rp_rp_fpm_he',      'prior': 'capm_rp', 'p_weight': 'rp', 'q_mode': 'ff3_paper_mean'},
+    {**BASELINE, 'name': 'mat_rp_rp_fpm_pap',     'prior': 'capm_rp', 'p_weight': 'rp', 'q_mode': 'ff3_paper_mean', 'omega_mode': 'ff3_paper'},
 ]
 
 
