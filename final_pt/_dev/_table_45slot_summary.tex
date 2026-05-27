@@ -1,0 +1,41 @@
+% Table: 45-slot grid distribution summary
+% Requires: \usepackage{booktabs}, \usepackage{multirow}, \usepackage{kotex}
+
+\begin{table}[ht]
+\centering
+\caption{Distribution of LSTM--ANN performance difference across 45 BL configurations (3 priors $\times$ 3 $p_w$ $\times$ 5 Q calibrations, $\omega=$err fixed). For each metric and regime, reported statistics are computed across the 45 slots. Positive $\Delta$ indicates LSTM advantage; for MDD, $\Delta = $ MDD$_\mathrm{LSTM} - $ MDD$_\mathrm{ANN}$ where both values are negative, so positive $\Delta$ means LSTM has a shallower drawdown.}
+\label{tab:45slot_summary}
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.15}
+\small
+\begin{tabular}{ll rrrrr}
+\toprule
+Period & Metric & median $\Delta$ & mean $\Delta$ & \% LSTM win & min $\Delta$ & max $\Delta$ \\
+\midrule
+\multirow{3}{*}{All}
+ & Sharpe  & $+0.064$ & $+0.046$ & 77.8\% & $-0.052$ & $+0.105$ \\
+ & Sortino & $+0.141$ & $+0.104$ & 75.6\% & $-0.071$ & $+0.273$ \\
+ & MDD     & $+0.003$ & $+0.007$ & 51.1\% & $-0.076$ & $+0.049$ \\
+\midrule
+\multirow{3}{*}{R1 (회복)}
+ & Sharpe  & $-0.040$ & $-0.060$ & 33.3\% & $-0.321$ & $+0.177$ \\
+ & Sortino & $+0.125$ & $+0.122$ & 60.0\% & $-0.409$ & $+0.848$ \\
+ & MDD     & $-0.007$ & $-0.007$ & 28.9\% & $-0.046$ & $+0.043$ \\
+\midrule
+\multirow{3}{*}{R2 (확장)}
+ & Sharpe  & $-0.001$ & $-0.018$ & 42.2\% & $-0.260$ & $+0.269$ \\
+ & Sortino & $-0.063$ & $-0.089$ & 28.9\% & $-0.435$ & $+0.121$ \\
+ & MDD     & $+0.011$ & $+0.004$ & 64.4\% & $-0.059$ & $+0.027$ \\
+\midrule
+\multirow{3}{*}{\textbf{R3 (위기)}}
+ & Sharpe  & $\mathbf{+0.220}$ & $+0.200$ & \textbf{93.3\%} & $-0.191$ & $+0.373$ \\
+ & Sortino & $\mathbf{+0.482}$ & $+0.444$ & \textbf{93.3\%} & $-0.571$ & $+0.976$ \\
+ & MDD     & $\mathbf{+0.036}$ & $+0.034$ & \textbf{93.3\%} & $-0.047$ & $+0.061$ \\
+\midrule
+\multirow{3}{*}{R4 (정상화)}
+ & Sharpe  & $+0.060$ & $+0.057$ & 82.2\% & $-0.101$ & $+0.257$ \\
+ & Sortino & $+0.112$ & $+0.130$ & 88.9\% & $-0.141$ & $+0.793$ \\
+ & MDD     & $+0.009$ & $+0.009$ & 77.8\% & $-0.012$ & $+0.044$ \\
+\bottomrule
+\end{tabular}
+\end{table}
